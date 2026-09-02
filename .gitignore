@@ -1,0 +1,8 @@
+# Ses dosyalari depoya girmez: sayfanin yanina koydugun song.mp3 senin kopyandir,
+# repoya eklenmesi onu yayinlamak olur.
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.flac
+song.*

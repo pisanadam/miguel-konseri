@@ -1,12 +1,20 @@
 # MIGUEL PHONK — 3D Konser
 
-Tarayicida calisan tek dosyalik 3D konser. Sarkinin hook'u ses dosyasi olarak degil,
-**Web Audio API ile canli sentezlenerek** calinir; sahnedeki isik, lazer, LED duvar ve
-kalabalik ayni sesin kendisine tepki verir.
+Tarayicida calisan tek dosyalik 3D konser. Iki ses kaynagi vardir:
 
-Ac: `index.html` — kurulum yok, derleme yok.
+1. **KAYIT** — sarkinin kendisi calar. `index.html` yanina `song.mp3` koy, ya da mp3'u
+   sayfaya surukle. Isik, lazer, LED duvar ve kalabalik **canli spektrum analiziyle**
+   surulur: 0–170 Hz kick'i, 170–1000 Hz snare'i, 6–13 kHz hi-hat'i tetikler; sahne
+   siddeti sarkinin anlik enerjisinden gelir.
+2. **SENTEZ** — nota calar. Kayittan cikarilmis notalar Web Audio ile canli sentezlenir
+   (808, cowbell, trap davul, lead). Ses dosyasi gerektirmez.
 
-## Muzik
+`S` tusu ikisi arasinda gecis yapar. Ac: `index.html` — kurulum yok, derleme yok.
+
+> `song.mp3` depoya dahil degildir ve `.gitignore` ile disarida tutulur — kendi
+> kopyani sayfanin yanina koy.
+
+## Muzik (sentez modu)
 
 Notalar **kaydin kendisinden cikarildi**, kulaktan yazilmadi. Sonuc `index.html` icinde
 `SONG` ve `DRUMS` sabitlerinde acik veri olarak durur.
@@ -68,10 +76,12 @@ Bolumler sarkinin 8 barlik dongusuyle hizali; dongu bastan basa tekrar eder.
 |---|---|
 | `Bosluk` | Oynat / duraklat |
 | `C` | Kamera modu: SINEMA → SERBEST → KALABALIK |
-| `M` | MIDI yukle / yerlesik hook'a don |
+| `M` | Dosya yukle (.mp3 / .wav / .mid) |
+| `S` | Kaynak: KAYIT ↔ SENTEZ |
 | `H` | HUD ac/kapa |
 | `F` | Tam ekran |
 | Surukle | Serbest kamerada bakis (surukleyince otomatik gecer) |
+| Dosya birak | .mp3/.wav → sarki calar &middot; .mid → notalar sentezle calar |
 | Tekerlek | Zoom |
 
 ## URL parametreleri
@@ -102,8 +112,12 @@ ekranda hata banneri gosterir, konser calmaya devam eder. Sinir: 4 MB, adim basi
   kuyrugu `currentTime`'a gore tuketir — isik ve vurus kaymaz.
 - Kalite katmani cihaz belleği/cekirdek sayisina gore secilir: kalabalik 420–2200 instance.
 - `prefers-reduced-motion` acikken strobe ve kamera sarsintisi kisilir.
-- Sekme arka plana alininca ses otomatik duraklar.
-- MIDI dosyasi tarayiciyi hic terk etmez; `FileReader` ile yerelde okunur.
+- Sekme arka plana alininca ses otomatik duraklar; kayit modunda konum korunur.
+- Kayit modunda gorseller `AnalyserNode` uzerinden uyarlamali esikle surulur:
+  her bant kendi hareketli ortalamasini asinca tetiklenir, boylece parcanin
+  seviyesinden bagimsiz calisir.
+- Yuklenen ses ve MIDI dosyalari tarayiciyi hic terk etmez; `FileReader` ile
+  yerelde okunur, hicbir yere gonderilmez. Sinirlar: ses 40 MB, MIDI 4 MB.
 
 ## Kaynak
 

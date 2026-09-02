@@ -142,8 +142,9 @@
 <div id="controls">
   <input id="vol" type="range" min="0" max="100" value="80" aria-label="Ses seviyesi" title="Ses seviyesi" />
   <button class="ctl" id="btn-play" aria-pressed="true" title="Bosluk">DURAKLAT</button>
-  <button class="ctl" id="btn-midi" title="M — kendi .mid dosyani cal">MIDI YUKLE</button>
-  <input type="file" id="midi-file" accept=".mid,.midi,audio/midi" hidden />
+  <button class="ctl" id="btn-midi" title="M — sarkiyi (mp3) veya notalari (mid) yukle">DOSYA YUKLE</button>
+  <input type="file" id="midi-file" accept=".mid,.midi,.mp3,.wav,.ogg,.m4a,.flac,audio/*" hidden />
+  <button class="ctl" id="btn-src" title="S — kaynak: kayit / sentez" hidden>KAYNAK: SENTEZ</button>
   <button class="ctl" id="btn-cam" title="C">KAMERA: SINEMA</button>
   <button class="ctl" id="btn-hud" aria-pressed="true" title="H">HUD</button>
   <button class="ctl" id="btn-full" title="F">TAM EKRAN</button>
@@ -154,14 +155,16 @@
   <h1>MIGUEL<br />PHONK</h1>
   <p>Sarkinin hook notalari tarayicida canli sentezleniyor: 808 sub, cowbell, trap davul ve lead melodi.
      Isik, lazer ve kalabalik sesin kendisine tepki veriyor. Ses icin dokunma gerekli.<br />
-     Kendi notalarin varsa <b>.mid dosyasini sayfaya birak</b> — ayni sentezle o calinir.</p>
+     Sarkinin kendisini calmak icin <b>mp3'u sayfaya birak</b> (ya da yanina <code>song.mp3</code>
+     koy) — isik, lazer ve kalabalik canli spektrumla surulur.
+     <b>.mid</b> birakirsan notalar bu sentezle calar.</p>
   <button id="enter" type="button">KONSERI BASLAT</button>
   <div id="keys">
     <kbd>Bosluk</kbd> oynat/durdur &nbsp; <kbd>C</kbd> kamera &nbsp; <kbd>M</kbd> midi &nbsp; <kbd>H</kbd> hud &nbsp; <kbd>F</kbd> tam ekran &nbsp; <kbd>surukle</kbd> bak
   </div>
 </div>
 
-<div id="drop"><div>MIDI DOSYASINI BIRAK<small>.mid / .midi &middot; notalar bu sentezle calinir</small></div></div>
+<div id="drop"><div>DOSYAYI BIRAK<small>.mp3 / .wav &rarr; sarkinin kendisi calar &nbsp;&middot;&nbsp; .mid &rarr; notalar bu sentezle calinir</small></div></div>
 
 <div id="err" role="alert"></div>
 
@@ -493,6 +496,12 @@ function AudioEngine() {
   this.noiseBuf = null;
   this.nodes = {};
   this.userMelody = null;   /* MIDI'den gelen melodi; varsa yerlesik hook yerine bu calar */
+  this.mode = "synth";      /* "synth" = canli sentez, "file" = gercek kayit */
+  this.songBuffer = null;   /* cozulmus ses dosyasi */
+  this.songName = null;
+  this.fileSource = null;
+  this.fileStart = 0;       /* ctx zamani */
+  this.fileOffset = 0;      /* duraklatilan konum */
 }
 
 AudioEngine.prototype.init = function () {
@@ -781,6 +790,13 @@ AudioEngine.prototype.setMelody = function (mel) {
 AudioEngine.prototype.scheduleStep = function (absStep, t) {
   var bar = Math.floor(absStep / STEPS_PER_BAR);
   var s = absStep % STEPS_PER_BAR;
+
+  /* Kayit modunda hicbir enstruman calmaz; sadece bar isaretini gecer,
+     boylece kamera kesmeleri ve HUD sarkiyla birlikte ilerler. */
+  if (this.mode === "file") {
+    if (s === 0) this.push(t, "bar", bar);
+    return;
+  }
   var sec = sectionAtBar(bar);
   var p = sec.def.parts;
   var songStep = absStep % SONG.loopSteps;
@@ -884,6 +900,7 @@ AudioEngine.prototype.start = function () {
     self.startTime = self.ctx.currentTime + 0.14;
     self.stepIndex = 0;
     self.playing = true;
+    if (self.mode === "file") self.startFile(0);
     if (self.timerId) clearInterval(self.timerId);
     self.timerId = setInterval(function () { self.tick(); }, 25);
     self.tick();
@@ -893,6 +910,7 @@ AudioEngine.prototype.start = function () {
 
 AudioEngine.prototype.pause = function () {
   if (!this.ctx || !this.playing) return Promise.resolve();
+  if (this.mode === "file") { this.fileOffset = this.filePosition(); this.stopFile(); }
   this.playing = false;
   if (this.timerId) { clearInterval(this.timerId); this.timerId = null; }
   this.events.length = 0;
@@ -906,6 +924,7 @@ AudioEngine.prototype.resume = function () {
     /* duraklamis sureyi telafi et: startTime'i simdiye gore geri kaydir */
     self.startTime = self.ctx.currentTime - self.stepIndex * self.stepDur() + 0.05;
     self.playing = true;
+    if (self.mode === "file") self.startFile(self.fileOffset);
     self.timerId = setInterval(function () { self.tick(); }, 25);
     self.tick();
   });
@@ -914,6 +933,63 @@ AudioEngine.prototype.resume = function () {
 AudioEngine.prototype.stop = function () {
   this.playing = false;
   if (this.timerId) { clearInterval(this.timerId); this.timerId = null; }
+};
+
+/* Ses dosyasini cozer. Basarirsa mod "file"a gecer. */
+AudioEngine.prototype.loadAudio = function (arrayBuffer, name) {
+  if (!this.ready) this.init();
+  var self = this;
+  return new Promise(function (resolve, reject) {
+    var ok = function (buf) {
+      if (!buf || !buf.duration) { reject(new Error("Ses cozulemedi (bos tampon).")); return; }
+      self.songBuffer = buf;
+      self.songName = name || "kayit";
+      resolve(buf);
+    };
+    var no = function (e) { reject(e || new Error("Ses cozulemedi: desteklenmeyen bicim.")); };
+    var r = self.ctx.decodeAudioData(arrayBuffer, ok, no);
+    if (r && typeof r.then === "function") r.then(ok)["catch"](no);
+  });
+};
+
+AudioEngine.prototype.startFile = function (offset) {
+  if (!this.songBuffer) throw new Error("Yuklenmis ses dosyasi yok.");
+  this.stopFile();
+  var src = this.ctx.createBufferSource();
+  src.buffer = this.songBuffer;
+  src.loop = true;
+  var g = this.ctx.createGain();
+  g.gain.value = 1;
+  src.connect(g); g.connect(this.nodes.comp);
+  this.fileOffset = (offset || 0) % this.songBuffer.duration;
+  this.fileStart = this.ctx.currentTime - this.fileOffset;
+  src.start(this.ctx.currentTime, this.fileOffset);
+  this.fileSource = src;
+  this.fileGain = g;
+};
+
+AudioEngine.prototype.stopFile = function () {
+  if (this.fileSource) {
+    try { this.fileSource.stop(); } catch (e) { /* zaten durmus */ }
+    try { this.fileSource.disconnect(); } catch (e) { /* yoksay */ }
+    this.fileSource = null;
+  }
+};
+
+AudioEngine.prototype.filePosition = function () {
+  if (!this.songBuffer) return 0;
+  if (!this.playing) return this.fileOffset;
+  return (this.ctx.currentTime - this.fileStart) % this.songBuffer.duration;
+};
+
+/* Mod degisimi: sentez <-> kayit */
+AudioEngine.prototype.setMode = function (mode) {
+  if (mode === this.mode) return;
+  if (mode === "file" && !this.songBuffer) throw new Error("Once bir ses dosyasi yukle.");
+  this.mode = mode;
+  if (mode === "synth") { this.stopFile(); }
+  else if (this.playing) { this.startFile(0); }
+  log("mod ->", mode);
 };
 
 AudioEngine.prototype.spectrum = function () {
@@ -1505,9 +1581,69 @@ Stage.prototype.consume = function (engine) {
   }
 };
 
+/* Kayit modunda gorsel tetikler sentezden degil, calan sesin spektrumundan gelir.
+   Bantlar: 0-170 Hz kick, 170-1000 Hz snare/clap, 6-13 kHz hi-hat. */
+Stage.prototype.liveTriggers = function (engine, dt) {
+  var spec = engine.spectrum();
+  if (!spec) return;
+  if (!this.live) {
+    this.live = { low: 0, mid: 0, high: 0, lowAvg: 0.1, midAvg: 0.1, highAvg: 0.1,
+                  all: 0, allAvg: 0.1, ck: 0, cs: 0, ch: 0, ci: 0 };
+  }
+  var L = this.live;
+  var n = spec.length;                       /* 512 bin, ~21.5 Hz/bin @44.1k */
+  function band(a, b) {
+    a = Math.max(0, a); b = Math.min(n, b);
+    var sum = 0;
+    for (var i = a; i < b; i++) sum += spec[i];
+    return sum / Math.max(1, b - a) / 255;
+  }
+  var low = band(1, 8), mid = band(9, 46), high = band(140, 300);
+  var all = band(1, 200);
+
+  var k = 1 - Math.exp(-2.2 * dt);           /* taban cizgisi yavas takip eder */
+  L.lowAvg += (low - L.lowAvg) * k;
+  L.midAvg += (mid - L.midAvg) * k;
+  L.highAvg += (high - L.highAvg) * k;
+  L.allAvg += (all - L.allAvg) * (1 - Math.exp(-0.8 * dt));
+
+  L.ck -= dt; L.cs -= dt; L.ch -= dt; L.ci -= dt;
+
+  if (low > L.lowAvg * 1.28 && low > 0.18 && L.ck <= 0) {
+    var v = clamp((low - L.lowAvg) * 4, 0.4, 1.4);
+    this.pulse.kick = Math.min(1.6, this.pulse.kick + v);
+    this.pulse.bass = Math.min(1.5, this.pulse.bass + v * 0.9);
+    this.shake = Math.min(1, this.shake + 0.3);
+    this.punchCrowd(0.45 * v);
+    L.ck = 0.11;
+  }
+  if (mid > L.midAvg * 1.22 && mid > 0.05 && L.cs <= 0) {
+    this.pulse.snare = 1;
+    this.laserBurst();
+    UI.strobe(0.12, 70);
+    L.cs = 0.2;
+  }
+  if (high > L.highAvg * 1.25 && high > 0.025 && L.ch <= 0) {
+    this.pulse.cowbell = Math.min(1.2, this.pulse.cowbell + 0.5);
+    L.ch = 0.055;
+  }
+  if (all > L.allAvg * 1.5 && all > 0.22 && L.ci <= 0) {
+    this.pulse.impact = 1;
+    this.burstSparks(Math.floor(TIER.sparks * 0.4));
+    this.punchCrowd(0.9);
+    UI.strobe(0.34, 150);
+    L.ci = 3.5;
+  }
+
+  /* melodi hareketi lead nabzini besler */
+  this.pulse.lead = Math.max(this.pulse.lead, clamp((mid - L.midAvg * 0.8) * 3, 0, 1.2));
+  /* sahne siddeti sarkinin kendi enerjisinden */
+  this.energy = lerp(this.energy, clamp(0.12 + all * 2.6, 0.1, 1), 1 - Math.exp(-1.5 * dt));
+};
+
 Stage.prototype.onBar = function (bar) {
   var sec = sectionAtBar(bar);
-  this.energy = sec.def.energy;
+  if (!APP.engine || APP.engine.mode !== "file") this.energy = sec.def.energy;
   this.section = sec;
   if (this.camMode === "cinema") this.setShot(sec.def.cam, bar * 0.61);
   UI.setSection(sec.def.name, bar);
@@ -1535,6 +1671,7 @@ Stage.prototype.update = function (dt, engine) {
   this.frame++;
 
   this.consume(engine);
+  if (engine && engine.mode === "file") this.liveTriggers(engine, dt);
 
   /* sonumleme */
   var p = this.pulse;
@@ -1759,8 +1896,8 @@ var UI = {
   strobeTimer: null,
 
   init: function () {
-    var ids = ["gate", "enter", "btn-play", "btn-cam", "btn-hud", "btn-full", "btn-midi", "midi-file",
-               "drop", "vol", "section-tag", "bpm-tag", "bar-tag", "cam-tag", "fps-tag",
+    var ids = ["gate", "enter", "btn-play", "btn-cam", "btn-hud", "btn-full", "btn-midi", "btn-src",
+               "midi-file", "drop", "vol", "section-tag", "bpm-tag", "bar-tag", "cam-tag", "fps-tag",
                "hud", "meters", "strobe"];
     for (var i = 0; i < ids.length; i++) this.els[ids[i]] = document.getElementById(ids[i]);
     this.els["bpm-tag"].textContent = Math.round(CONFIG.bpm);
@@ -1817,8 +1954,36 @@ function applyMelody(mel, label) {
   UI.els["bpm-tag"].textContent = Math.round(CONFIG.bpm);
 }
 
+function syncSourceButton() {
+  var b = UI.els["btn-src"], e = APP.engine;
+  if (!e.songBuffer) { b.hidden = true; return; }
+  b.hidden = false;
+  b.textContent = "KAYNAK: " + (e.mode === "file" ? "KAYIT" : "SENTEZ");
+  b.setAttribute("aria-pressed", e.mode === "file" ? "true" : "false");
+}
+
+/* Ses dosyasini yukleyip kayit moduna gecer. */
+function loadAudioFile(file) {
+  if (file.size > 40 * 1024 * 1024) {
+    fail("Ses dosyasi cok buyuk", new Error(file.name + " 40 MB sinirini asiyor."));
+    return;
+  }
+  var reader = new FileReader();
+  reader.onerror = function () { fail("Dosya okunamadi", reader.error || new Error(file.name)); };
+  reader.onload = function () {
+    APP.engine.loadAudio(reader.result, file.name).then(function (buf) {
+      APP.engine.setMode("file");
+      if (APP.engine.playing) APP.engine.startFile(0);
+      UI.els["btn-midi"].textContent = "SARKI: " + file.name.replace(/\.[^.]+$/, "").slice(0, 16);
+      UI.els["err"].classList.remove("show");
+      syncSourceButton();
+      log("ses yuklendi:", file.name, buf.duration.toFixed(1) + " s,", buf.numberOfChannels + " kanal");
+    })["catch"](function (e) { fail("Ses cozulemedi", e); });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 function loadMidiFile(file) {
-  if (!file) return;
   if (file.size > 4 * 1024 * 1024) { fail("MIDI cok buyuk", new Error(file.name + " 4 MB sinirini asiyor.")); return; }
   var reader = new FileReader();
   reader.onerror = function () { fail("Dosya okunamadi", reader.error || new Error(file.name)); };
@@ -1826,7 +1991,9 @@ function loadMidiFile(file) {
     try {
       var parsed = parseMidi(reader.result);
       var mel = melodyFromMidi(parsed);
+      APP.engine.setMode("synth");
       applyMelody(mel, file.name.replace(/\.midi?$/i, "").slice(0, 18));
+      syncSourceButton();
       document.getElementById("err").classList.remove("show");
       log("midi:", file.name, parsed.tracks + " parca,", mel.noteCount + " nota,",
           mel.loopBars + " bar, atlanan", mel.skipped);
@@ -1837,9 +2004,40 @@ function loadMidiFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
+/* Uzantiya gore dogru yukleyiciye yollar. */
+function loadDroppedFile(file) {
+  if (!file) return;
+  if (/\.midi?$/i.test(file.name) || file.type === "audio/midi") loadMidiFile(file);
+  else if (/\.(mp3|wav|ogg|m4a|aac|flac|opus|webm)$/i.test(file.name) || /^audio\//.test(file.type)) loadAudioFile(file);
+  else fail("Desteklenmeyen dosya", new Error(file.name + " — .mp3/.wav ya da .mid bekleniyor."));
+}
+
+/* Sayfanin yanindaki song.mp3'u sessizce dener. */
+function tryLocalSong() {
+  if (location.protocol === "file:") { log("file:// — song.mp3 otomatik yuklenemez, dosyayi surukle"); return; }
+  fetch("song.mp3").then(function (r) {
+    if (!r.ok) throw new Error("song.mp3 yok (" + r.status + ")");
+    return r.arrayBuffer();
+  }).then(function (buf) {
+    return APP.engine.loadAudio(buf, "song.mp3");
+  }).then(function (b) {
+    APP.engine.setMode("file");
+    UI.els["btn-midi"].textContent = "SARKI: song.mp3";
+    syncSourceButton();
+    log("song.mp3 yuklendi:", b.duration.toFixed(1), "s");
+  })["catch"](function (e) { log("yerel song.mp3 yok:", e.message); });
+}
+
 function toggleMidi() {
-  if (APP.melodyName) applyMelody(null, null);
-  else UI.els["midi-file"].click();
+  if (APP.melodyName) { applyMelody(null, null); return; }
+  UI.els["midi-file"].click();
+}
+
+function toggleSource() {
+  try {
+    APP.engine.setMode(APP.engine.mode === "file" ? "synth" : "file");
+    syncSourceButton();
+  } catch (e) { fail("Kaynak degistirilemedi", e); }
 }
 
 function bindDropZone() {
@@ -1859,7 +2057,7 @@ function bindDropZone() {
   window.addEventListener("drop", function (e) {
     if (!hasFiles(e)) return;
     e.preventDefault(); depth = 0; zone.classList.remove("on");
-    loadMidiFile(e.dataTransfer.files[0]);
+    loadDroppedFile(e.dataTransfer.files[0]);
   });
 }
 
@@ -1942,7 +2140,7 @@ function startConcert() {
   btn.disabled = true;
   btn.textContent = "BAGLANIYOR...";
   try {
-    if (!APP.engine.ready) APP.engine.init();
+    if (!APP.engine.ready) { APP.engine.init(); tryLocalSong(); }
     APP.engine.nodes.master.gain.value = CONFIG.master;
     APP.engine.start().then(function () {
       UI.els.gate.classList.add("hidden");
@@ -1979,9 +2177,10 @@ function boot() {
   UI.els["btn-full"].addEventListener("click", toggleFullscreen);
   UI.els["btn-midi"].addEventListener("click", toggleMidi);
   UI.els["midi-file"].addEventListener("change", function () {
-    loadMidiFile(this.files && this.files[0]);
+    loadDroppedFile(this.files && this.files[0]);
     this.value = "";
   });
+  UI.els["btn-src"].addEventListener("click", toggleSource);
   bindDropZone();
   UI.els.vol.addEventListener("input", function () {
     CONFIG.master = clamp(parseInt(this.value, 10) / 100, 0, 1);
@@ -1996,6 +2195,7 @@ function boot() {
     if (k === " " || e.code === "Space") { e.preventDefault(); APP.engine.ready ? togglePlay() : startConcert(); }
     else if (k === "c") cycleCamera();
     else if (k === "m") toggleMidi();
+    else if (k === "s") toggleSource();
     else if (k === "h") toggleHud();
     else if (k === "f") toggleFullscreen();
     else if (k === "escape" && document.fullscreenElement) toggleFullscreen();
