@@ -6,3 +6,6 @@
 *.ogg
 *.flac
 song.*
+
+# paketlenmis tek dosya cikti (ses gomulu)
+konser.html

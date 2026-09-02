@@ -134,6 +134,7 @@
     <div>BOLUM <b id="section-tag">—</b></div>
     <div>BPM <b id="bpm-tag">140</b> &nbsp; BAR <b id="bar-tag">0</b></div>
     <div>KAMERA <b id="cam-tag">SINEMA</b> &nbsp; FPS <b id="fps-tag">0</b></div>
+    <div id="track-line" hidden>PARCA <b id="track-tag">—</b></div>
   </div>
 </div>
 
@@ -142,6 +143,9 @@
 <div id="controls">
   <input id="vol" type="range" min="0" max="100" value="80" aria-label="Ses seviyesi" title="Ses seviyesi" />
   <button class="ctl" id="btn-play" aria-pressed="true" title="Bosluk">DURAKLAT</button>
+  <button class="ctl" id="btn-prev" title="P — onceki parca" hidden>&#9664;</button>
+  <button class="ctl" id="btn-track" title="N — sonraki parca" hidden>PARCA</button>
+  <button class="ctl" id="btn-next" title="N — sonraki parca" hidden>&#9654;</button>
   <button class="ctl" id="btn-midi" title="M — sarkiyi (mp3) veya notalari (mid) yukle">DOSYA YUKLE</button>
   <input type="file" id="midi-file" accept=".mid,.midi,.mp3,.wav,.ogg,.m4a,.flac,audio/*" hidden />
   <button class="ctl" id="btn-src" title="S — kaynak: kayit / sentez" hidden>KAYNAK: SENTEZ</button>
@@ -155,12 +159,13 @@
   <h1>MIGUEL<br />PHONK</h1>
   <p>Sarkinin hook notalari tarayicida canli sentezleniyor: 808 sub, cowbell, trap davul ve lead melodi.
      Isik, lazer ve kalabalik sesin kendisine tepki veriyor. Ses icin dokunma gerekli.<br />
-     Sarkinin kendisini calmak icin <b>mp3'u sayfaya birak</b> (ya da yanina <code>song.mp3</code>
-     koy) — isik, lazer ve kalabalik canli spektrumla surulur.
-     <b>.mid</b> birakirsan notalar bu sentezle calar.</p>
+     Parcalar sayfanin icinde gomulu: <b>N</b> ile sonraki, <b>P</b> ile onceki.
+     Isik, lazer ve kalabalik canli spektrumla surulur. Kendi mp3'unu sayfaya
+     birakirsan listeye eklenir; <b>.mid</b> birakirsan notalar sentezle calar.</p>
   <button id="enter" type="button">KONSERI BASLAT</button>
   <div id="keys">
-    <kbd>Bosluk</kbd> oynat/durdur &nbsp; <kbd>C</kbd> kamera &nbsp; <kbd>M</kbd> midi &nbsp; <kbd>H</kbd> hud &nbsp; <kbd>F</kbd> tam ekran &nbsp; <kbd>surukle</kbd> bak
+    <kbd>Bosluk</kbd> oynat/durdur &nbsp; <kbd>N</kbd>/<kbd>P</kbd> parca &nbsp; <kbd>C</kbd> kamera &nbsp;
+    <kbd>S</kbd> kaynak &nbsp; <kbd>H</kbd> hud &nbsp; <kbd>F</kbd> tam ekran &nbsp; <kbd>surukle</kbd> bak
   </div>
 </div>
 
@@ -197,6 +202,30 @@ var CONFIG = {
   camera:   (QS.get("cam") || "cinema").toLowerCase(),
   autoplay: QS.get("autoplay") !== "0"
 };
+
+/* ---------------------------------------------------------------- gomulu sarkilar
+   bundle.py sayfaya her parca icin bir <script class="song-data"> blogu ekler.
+   Blok yoksa sayfa sentez modunda calisir. Base64 ancak parca calmaya geldiginde
+   cozulur — 5 parcalik bir liste bellekte pesin acilmaz. */
+function embeddedSongs() {
+  var els = document.querySelectorAll("script.song-data, script#song-data");
+  var out = [];
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    if ((el.textContent || "").length < 64) continue;
+    out.push({ el: el, name: el.getAttribute("data-name") || ("parca-" + (i + 1)), buffer: null });
+  }
+  return out;
+}
+
+/* Bir parcanin base64 govdesini ArrayBuffer'a cevirir. */
+function decodeB64Element(el) {
+  var b64 = (el.textContent || "").replace(/\s+/g, "");
+  var bin = atob(b64);
+  var buf = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
 
 /* ---------------------------------------------------------------- log / hata */
 var REDUCED_MOTION = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -502,6 +531,10 @@ function AudioEngine() {
   this.fileSource = null;
   this.fileStart = 0;       /* ctx zamani */
   this.fileOffset = 0;      /* duraklatilan konum */
+  this.playlist = [];       /* [{el, name, buffer}] */
+  this.trackIndex = -1;
+  this.manualStop = false;  /* onended'in otomatik gecisi tetiklememesi icin */
+  this.onTrackChange = null;
 }
 
 AudioEngine.prototype.init = function () {
@@ -952,12 +985,71 @@ AudioEngine.prototype.loadAudio = function (arrayBuffer, name) {
   });
 };
 
+/* Calma listesini kurar (henuz cozmez). */
+AudioEngine.prototype.setPlaylist = function (list) {
+  this.playlist = list || [];
+  this.trackIndex = -1;
+  log("calma listesi:", this.playlist.length, "parca");
+};
+
+/* Parcayi cozer ve etkin hale getirir. Ayni anda en fazla 2 cozulmus tampon
+   tutulur; digerleri birakilir (bir parca ~60 MB PCM eder). */
+AudioEngine.prototype.loadTrack = function (i) {
+  var self = this;
+  var n = this.playlist.length;
+  if (!n) return Promise.reject(new Error("Calma listesi bos."));
+  var idx = ((i % n) + n) % n;
+  var track = this.playlist[idx];
+
+  var ready = track.buffer
+    ? Promise.resolve(track.buffer)
+    : this.loadAudio(decodeB64Element(track.el), track.name).then(function (buf) {
+        track.buffer = buf;
+        var spare = 0;
+        for (var k = self.playlist.length - 1; k >= 0; k--) {
+          var t = self.playlist[k];
+          if (!t.buffer || k === idx) continue;
+          if (!t.el) continue;                   /* kaynagi yok, silinirse geri gelmez */
+          if (++spare > 1) t.buffer = null;      /* en fazla 1 yedek tampon tut */
+        }
+        return buf;
+      });
+
+  return ready.then(function (buf) {
+    self.songBuffer = buf;
+    self.songName = track.name;
+    self.trackIndex = idx;
+    /* Yeni parcanin seviyesi farklidir: uyarlamali esikler onceki parcadan
+       devraldigi taban cizgisiyle calisirsa hicbir vurus tetiklenmez. */
+    if (APP.stage) APP.stage.live = null;
+    if (self.onTrackChange) self.onTrackChange(idx, track.name, buf.duration);
+    log("parca", (idx + 1) + "/" + n, track.name, buf.duration.toFixed(1) + " s");
+    return buf;
+  });
+};
+
+/* Sonraki / onceki parca. Calarken cagrilirsa dogrudan gecer. */
+AudioEngine.prototype.changeTrack = function (delta) {
+  var self = this;
+  if (this.playlist.length < 2) return Promise.resolve();
+  var wasPlaying = this.playing && this.mode === "file";
+  return this.loadTrack(this.trackIndex + delta).then(function () {
+    self.fileOffset = 0;
+    if (wasPlaying) self.startFile(0);
+  });
+};
+
 AudioEngine.prototype.startFile = function (offset) {
   if (!this.songBuffer) throw new Error("Yuklenmis ses dosyasi yok.");
   this.stopFile();
+  var self = this;
   var src = this.ctx.createBufferSource();
   src.buffer = this.songBuffer;
-  src.loop = true;
+  src.loop = this.playlist.length < 2;          /* tek parca varsa dongude kalir */
+  src.onended = function () {
+    if (self.manualStop || !self.playing) return;
+    self.changeTrack(1)["catch"](function (e) { fail("Sonraki parcaya gecilemedi", e); });
+  };
   var g = this.ctx.createGain();
   g.gain.value = 1;
   src.connect(g); g.connect(this.nodes.comp);
@@ -970,9 +1062,12 @@ AudioEngine.prototype.startFile = function (offset) {
 
 AudioEngine.prototype.stopFile = function () {
   if (this.fileSource) {
+    this.manualStop = true;
     try { this.fileSource.stop(); } catch (e) { /* zaten durmus */ }
     try { this.fileSource.disconnect(); } catch (e) { /* yoksay */ }
+    this.fileSource.onended = null;
     this.fileSource = null;
+    this.manualStop = false;
   }
 };
 
@@ -1588,7 +1683,8 @@ Stage.prototype.liveTriggers = function (engine, dt) {
   if (!spec) return;
   if (!this.live) {
     this.live = { low: 0, mid: 0, high: 0, lowAvg: 0.1, midAvg: 0.1, highAvg: 0.1,
-                  all: 0, allAvg: 0.1, ck: 0, cs: 0, ch: 0, ci: 0 };
+                  all: 0, allAvg: 0.1, allMax: 0.2, allMin: 0.05,
+                  ck: 0, cs: 0, ch: 0, ci: 0 };
   }
   var L = this.live;
   var n = spec.length;                       /* 512 bin, ~21.5 Hz/bin @44.1k */
@@ -1601,33 +1697,38 @@ Stage.prototype.liveTriggers = function (engine, dt) {
   var low = band(1, 8), mid = band(9, 46), high = band(140, 300);
   var all = band(1, 200);
 
-  var k = 1 - Math.exp(-2.2 * dt);           /* taban cizgisi yavas takip eder */
+  /* Taban cizgisi transiyentten yavas olmali, yoksa sikistirilmis masterlarda
+     ortalama vurusa yetisir ve hicbir esik asilamaz. */
+  var k = 1 - Math.exp(-1.0 * dt);
   L.lowAvg += (low - L.lowAvg) * k;
   L.midAvg += (mid - L.midAvg) * k;
   L.highAvg += (high - L.highAvg) * k;
   L.allAvg += (all - L.allAvg) * (1 - Math.exp(-0.8 * dt));
+  /* Enerji parcanin kendi tepesine gore olceklenir: her master farkli yuksekliktedir. */
+  L.allMax = Math.max(all, L.allMax - L.allMax * 0.05 * dt, 0.08);
+  L.allMin = Math.min(all, L.allMin + (L.allMax - L.allMin) * 0.04 * dt);
 
   L.ck -= dt; L.cs -= dt; L.ch -= dt; L.ci -= dt;
 
-  if (low > L.lowAvg * 1.28 && low > 0.18 && L.ck <= 0) {
-    var v = clamp((low - L.lowAvg) * 4, 0.4, 1.4);
+  if (low > L.lowAvg * 1.15 && low > 0.10 && L.ck <= 0) {
+    var v = clamp((low / (L.lowAvg + 1e-4) - 1) * 3.2, 0.4, 1.4);
     this.pulse.kick = Math.min(1.6, this.pulse.kick + v);
     this.pulse.bass = Math.min(1.5, this.pulse.bass + v * 0.9);
     this.shake = Math.min(1, this.shake + 0.3);
     this.punchCrowd(0.45 * v);
     L.ck = 0.11;
   }
-  if (mid > L.midAvg * 1.22 && mid > 0.05 && L.cs <= 0) {
+  if (mid > L.midAvg * 1.16 && mid > 0.04 && L.cs <= 0) {
     this.pulse.snare = 1;
     this.laserBurst();
     UI.strobe(0.12, 70);
     L.cs = 0.2;
   }
-  if (high > L.highAvg * 1.25 && high > 0.025 && L.ch <= 0) {
+  if (high > L.highAvg * 1.18 && high > 0.02 && L.ch <= 0) {
     this.pulse.cowbell = Math.min(1.2, this.pulse.cowbell + 0.5);
     L.ch = 0.055;
   }
-  if (all > L.allAvg * 1.5 && all > 0.22 && L.ci <= 0) {
+  if (all > L.allAvg * 1.35 && all > L.allMax * 0.72 && L.ci <= 0) {
     this.pulse.impact = 1;
     this.burstSparks(Math.floor(TIER.sparks * 0.4));
     this.punchCrowd(0.9);
@@ -1638,7 +1739,9 @@ Stage.prototype.liveTriggers = function (engine, dt) {
   /* melodi hareketi lead nabzini besler */
   this.pulse.lead = Math.max(this.pulse.lead, clamp((mid - L.midAvg * 0.8) * 3, 0, 1.2));
   /* sahne siddeti sarkinin kendi enerjisinden */
-  this.energy = lerp(this.energy, clamp(0.12 + all * 2.6, 0.1, 1), 1 - Math.exp(-1.5 * dt));
+  var span = Math.max(0.04, L.allMax - L.allMin);
+  this.energy = lerp(this.energy, clamp(0.18 + 0.85 * ((all - L.allMin) / span), 0.12, 1),
+                     1 - Math.exp(-1.5 * dt));
 };
 
 Stage.prototype.onBar = function (bar) {
@@ -1897,6 +2000,7 @@ var UI = {
 
   init: function () {
     var ids = ["gate", "enter", "btn-play", "btn-cam", "btn-hud", "btn-full", "btn-midi", "btn-src",
+               "btn-prev", "btn-track", "btn-next", "track-line", "track-tag",
                "midi-file", "drop", "vol", "section-tag", "bpm-tag", "bar-tag", "cam-tag", "fps-tag",
                "hud", "meters", "strobe"];
     for (var i = 0; i < ids.length; i++) this.els[ids[i]] = document.getElementById(ids[i]);
@@ -1954,12 +2058,32 @@ function applyMelody(mel, label) {
   UI.els["bpm-tag"].textContent = Math.round(CONFIG.bpm);
 }
 
+/* Parca butonlarini ve HUD satirini gunceller. */
+function syncTrackUI() {
+  var e = APP.engine, n = e.playlist.length, show = n > 1;
+  ["btn-prev", "btn-track", "btn-next"].forEach(function (id) { UI.els[id].hidden = !show; });
+  UI.els["track-line"].hidden = !(n > 0 && e.mode === "file");
+  if (!n) return;
+  var i = Math.max(0, e.trackIndex);
+  var name = (e.playlist[i] && e.playlist[i].name) || "—";
+  var short = name.length > 22 ? name.slice(0, 21) + "\u2026" : name;
+  UI.els["btn-track"].textContent = (i + 1) + "/" + n + "  " + short;
+  UI.els["track-tag"].textContent = (i + 1) + "/" + n + " " + short;
+}
+
+function skipTrack(delta) {
+  APP.engine.changeTrack(delta).then(syncTrackUI)["catch"](function (e) {
+    fail("Parca degistirilemedi", e);
+  });
+}
+
 function syncSourceButton() {
   var b = UI.els["btn-src"], e = APP.engine;
   if (!e.songBuffer) { b.hidden = true; return; }
   b.hidden = false;
   b.textContent = "KAYNAK: " + (e.mode === "file" ? "KAYIT" : "SENTEZ");
   b.setAttribute("aria-pressed", e.mode === "file" ? "true" : "false");
+  UI.els["track-line"].hidden = !(e.playlist.length > 0 && e.mode === "file");
 }
 
 /* Ses dosyasini yukleyip kayit moduna gecer. */
@@ -1972,11 +2096,15 @@ function loadAudioFile(file) {
   reader.onerror = function () { fail("Dosya okunamadi", reader.error || new Error(file.name)); };
   reader.onload = function () {
     APP.engine.loadAudio(reader.result, file.name).then(function (buf) {
-      APP.engine.setMode("file");
-      if (APP.engine.playing) APP.engine.startFile(0);
-      UI.els["btn-midi"].textContent = "SARKI: " + file.name.replace(/\.[^.]+$/, "").slice(0, 16);
+      var e = APP.engine;
+      /* listeye ekle ve ona gec */
+      e.playlist.push({ el: null, name: file.name.replace(/\.[^.]+$/, ""), buffer: buf });
+      e.trackIndex = e.playlist.length - 1;
+      e.songBuffer = buf; e.songName = file.name;
+      e.setMode("file");
+      if (e.playing) e.startFile(0);
       UI.els["err"].classList.remove("show");
-      syncSourceButton();
+      syncSourceButton(); syncTrackUI();
       log("ses yuklendi:", file.name, buf.duration.toFixed(1) + " s,", buf.numberOfChannels + " kanal");
     })["catch"](function (e) { fail("Ses cozulemedi", e); });
   };
@@ -2139,14 +2267,46 @@ function startConcert() {
   var btn = UI.els.enter;
   btn.disabled = true;
   btn.textContent = "BAGLANIYOR...";
-  try {
-    if (!APP.engine.ready) { APP.engine.init(); tryLocalSong(); }
+
+  function go() {
     APP.engine.nodes.master.gain.value = CONFIG.master;
-    APP.engine.start().then(function () {
+    return APP.engine.start().then(function () {
       UI.els.gate.classList.add("hidden");
       UI.els.hud.setAttribute("aria-hidden", "false");
       APP.stage.onBar(0);
-    })["catch"](function (e) {
+      syncSourceButton();
+      syncTrackUI();
+    });
+  }
+
+  try {
+    var fresh = !APP.engine.ready;
+    if (fresh) APP.engine.init();
+
+    var emb = fresh ? embeddedSongs() : [];
+    if (emb.length) {
+      btn.textContent = "SARKI ACILIYOR...";
+      APP.engine.setPlaylist(emb);
+      APP.engine.onTrackChange = function () { syncTrackUI(); };
+      APP.engine.loadTrack(0).then(function (b) {
+        APP.engine.setMode("file");
+        syncTrackUI();
+        log("gomulu liste:", emb.length + " parca, ilk parca", b.duration.toFixed(1) + " s");
+        return go();
+      })["catch"](function (e) {
+        warn("Gomulu sarki calinamadi, sentez moduna dusuluyor:", e.message);
+        APP.engine.setPlaylist([]);
+        APP.engine.mode = "synth";
+        go()["catch"](function (e2) {
+          btn.disabled = false; btn.textContent = "TEKRAR DENE";
+          fail("Ses baslatilamadi", e2);
+        });
+      });
+      return;
+    }
+
+    if (fresh) tryLocalSong();
+    go()["catch"](function (e) {
       btn.disabled = false; btn.textContent = "TEKRAR DENE";
       fail("Ses baslatilamadi", e);
     });
@@ -2181,6 +2341,9 @@ function boot() {
     this.value = "";
   });
   UI.els["btn-src"].addEventListener("click", toggleSource);
+  UI.els["btn-track"].addEventListener("click", function () { skipTrack(1); });
+  UI.els["btn-next"].addEventListener("click", function () { skipTrack(1); });
+  UI.els["btn-prev"].addEventListener("click", function () { skipTrack(-1); });
   bindDropZone();
   UI.els.vol.addEventListener("input", function () {
     CONFIG.master = clamp(parseInt(this.value, 10) / 100, 0, 1);
@@ -2196,6 +2359,8 @@ function boot() {
     else if (k === "c") cycleCamera();
     else if (k === "m") toggleMidi();
     else if (k === "s") toggleSource();
+    else if (k === "n" || e.key === "ArrowRight") skipTrack(1);
+    else if (k === "p" || e.key === "ArrowLeft") skipTrack(-1);
     else if (k === "h") toggleHud();
     else if (k === "f") toggleFullscreen();
     else if (k === "escape" && document.fullscreenElement) toggleFullscreen();

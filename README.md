@@ -2,17 +2,43 @@
 
 Tarayicida calisan tek dosyalik 3D konser. Iki ses kaynagi vardir:
 
-1. **KAYIT** — sarkinin kendisi calar. `index.html` yanina `song.mp3` koy, ya da mp3'u
-   sayfaya surukle. Isik, lazer, LED duvar ve kalabalik **canli spektrum analiziyle**
-   surulur: 0–170 Hz kick'i, 170–1000 Hz snare'i, 6–13 kHz hi-hat'i tetikler; sahne
-   siddeti sarkinin anlik enerjisinden gelir.
+1. **KAYIT** — sarkilarin kendisi calar. Bir **calma listesi** olarak gomulu gelirler
+   (`bundle.py` ile paketlenir); `N`/`P` ile parca degistirilir, parca bitince
+   kendiliginden sonrakine gecer. Isik, lazer, LED duvar ve kalabalik **canli spektrum
+   analiziyle** surulur: 0–170 Hz kick'i, 170–1000 Hz snare'i, 6–13 kHz hi-hat'i
+   tetikler; sahne siddeti sarkinin anlik enerjisinden gelir. Esikler her bandin kendi
+   hareketli ortalamasina gore uyarlanir ve **parca degisiminde sifirlanir**, boylece
+   sessiz bir parca gurultulu bir parcadan sonra da dogru tetiklenir.
 2. **SENTEZ** — nota calar. Kayittan cikarilmis notalar Web Audio ile canli sentezlenir
    (808, cowbell, trap davul, lead). Ses dosyasi gerektirmez.
 
-`S` tusu ikisi arasinda gecis yapar. Ac: `index.html` — kurulum yok, derleme yok.
+`S` tusu ikisi arasinda gecis yapar. `index.html` tek basina sentez modunda acilir;
+sarkilarla acilan surum icin asagidaki paketlemeyi kullan.
 
-> `song.mp3` depoya dahil degildir ve `.gitignore` ile disarida tutulur — kendi
-> kopyani sayfanin yanina koy.
+## Paketleme — tek dosya, cevrimdisi
+
+`bundle.py`, sayfayi ve ses dosyalarini tek bir HTML'e gomer. Cikti cift tiklamayla
+(`file://`) acilir; internet, sunucu ve kurulum istemez.
+
+```bash
+python3 bundle.py \
+  -a "1 - birinci.mp3" \
+  -a "2 - ikinci.mp3" \
+  -a "3 - ucuncu.mp3" \
+  --three three.min.js \
+  -o konser.html
+```
+
+- `-a` sirayla tekrarlanir; sira calma listesi sirasidir.
+- Parca adi dosya adindan alinir (bastaki numara ve alt cizgiler temizlenir).
+- `--three` ile [three.js r128](https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js)
+  de gomulur; olmazsa sayfa acilirken internet gerekir.
+- Base64 govdeleri **ancak o parca calmaya geldiginde** cozulur; ayni anda en fazla iki
+  cozulmus tampon tutulur (bir parca ~60 MB PCM eder).
+- Sinirlar: parca basina 60 MB, toplam 120 MB.
+
+> Ses dosyalari ve paketlenmis `konser.html` depoya dahil degildir, `.gitignore` ile
+> disarida tutulur. Kendi kopyalarini kendi makinende paketle.
 
 ## Muzik (sentez modu)
 
@@ -76,12 +102,14 @@ Bolumler sarkinin 8 barlik dongusuyle hizali; dongu bastan basa tekrar eder.
 |---|---|
 | `Bosluk` | Oynat / duraklat |
 | `C` | Kamera modu: SINEMA → SERBEST → KALABALIK |
+| `N` / `→` | Sonraki parca |
+| `P` / `←` | Onceki parca |
 | `M` | Dosya yukle (.mp3 / .wav / .mid) |
 | `S` | Kaynak: KAYIT ↔ SENTEZ |
 | `H` | HUD ac/kapa |
 | `F` | Tam ekran |
 | Surukle | Serbest kamerada bakis (surukleyince otomatik gecer) |
-| Dosya birak | .mp3/.wav → sarki calar &middot; .mid → notalar sentezle calar |
+| Dosya birak | .mp3/.wav → listeye eklenir ve calar &middot; .mid → notalar sentezle calar |
 | Tekerlek | Zoom |
 
 ## URL parametreleri
