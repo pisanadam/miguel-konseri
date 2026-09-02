@@ -1,0 +1,1718 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>MIGUEL PHONK — 3D KONSER</title>
+<meta name="description" content="Miguel phonk hook'unu Web Audio ile canli sentezleyip 3D sahnede calan tarayici konseri." />
+<style>
+  :root{
+    --neon:#ff2d9b;
+    --neon2:#22e0ff;
+    --neon3:#a45cff;
+    --bg:#04010a;
+    --fg:#e9e6ff;
+    --dim:#8b84ad;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--fg);
+    font-family:"Bahnschrift","DIN Alternate","Segoe UI",system-ui,-apple-system,sans-serif;
+    overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;}
+  #stage-canvas{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;}
+
+  /* --- film katmanlari --- */
+  #vignette{position:fixed;inset:0;z-index:2;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 35%, rgba(0,0,0,.55) 78%, rgba(0,0,0,.92) 100%);}
+  #grain{position:fixed;inset:-50%;z-index:3;pointer-events:none;opacity:.055;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+    animation:grainShift .6s steps(3) infinite;}
+  @keyframes grainShift{
+    0%{transform:translate(0,0)}33%{transform:translate(-3%,2%)}66%{transform:translate(2%,-3%)}100%{transform:translate(0,0)}
+  }
+  #strobe{position:fixed;inset:0;z-index:4;pointer-events:none;background:#fff;opacity:0;mix-blend-mode:screen;}
+  #scanlines{position:fixed;inset:0;z-index:3;pointer-events:none;opacity:.18;
+    background:repeating-linear-gradient(to bottom, rgba(255,255,255,.05) 0 1px, rgba(0,0,0,0) 1px 3px);}
+
+  /* --- HUD --- */
+  #hud{position:fixed;z-index:6;left:0;right:0;top:0;padding:14px 18px;pointer-events:none;
+    display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+    text-transform:uppercase;letter-spacing:.14em;font-size:11px;}
+  .panel{background:rgba(10,4,22,.42);border:1px solid rgba(255,45,155,.28);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:9px 13px;border-radius:3px;
+    box-shadow:0 0 22px rgba(255,45,155,.13), inset 0 0 18px rgba(34,224,255,.05);}
+  #hud-left .title{font-size:15px;letter-spacing:.42em;color:#fff;
+    text-shadow:0 0 12px var(--neon),0 0 30px var(--neon3);}
+  #hud-left .sub{color:var(--dim);margin-top:5px;letter-spacing:.2em;font-size:10px;}
+  #hud-right{text-align:right;line-height:1.85;color:var(--dim);}
+  #hud-right b{color:var(--neon2);font-weight:600;letter-spacing:.1em;}
+  #section-tag{color:var(--neon);font-weight:700;}
+
+  #meters{position:fixed;z-index:6;left:18px;bottom:18px;pointer-events:none;
+    display:flex;align-items:flex-end;gap:3px;height:46px;}
+  .meter-bar{width:4px;background:linear-gradient(to top,var(--neon3),var(--neon2));
+    height:2px;border-radius:2px;transition:height .045s linear;box-shadow:0 0 8px var(--neon2);}
+
+  #controls{position:fixed;z-index:7;right:18px;bottom:18px;display:flex;gap:8px;align-items:center;
+    flex-wrap:wrap;justify-content:flex-end;max-width:min(92vw,560px);}
+  button.ctl{pointer-events:auto;cursor:pointer;font:inherit;font-size:10px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--fg);background:rgba(10,4,22,.55);
+    border:1px solid rgba(34,224,255,.3);padding:9px 12px;border-radius:3px;
+    transition:.15s ease;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
+  button.ctl:hover{border-color:var(--neon);color:#fff;box-shadow:0 0 16px rgba(255,45,155,.4);
+    transform:translateY(-1px);}
+  button.ctl:active{transform:translateY(0);}
+  button.ctl[aria-pressed="true"]{border-color:var(--neon);color:var(--neon);}
+  #vol{pointer-events:auto;width:104px;accent-color:var(--neon);}
+
+  /* --- acilis ekrani --- */
+  #gate{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:22px;text-align:center;padding:28px;
+    background:radial-gradient(ellipse at 50% 50%, #1a0330 0%, #04010a 65%);
+    transition:opacity .7s ease, visibility .7s;}
+  #gate.hidden{opacity:0;visibility:hidden;pointer-events:none;}
+  #gate h1{margin:0;font-size:clamp(30px,9vw,78px);letter-spacing:.2em;line-height:.98;
+    color:#fff;text-shadow:0 0 18px var(--neon),0 0 44px var(--neon3),0 0 90px var(--neon);
+    animation:flicker 4.5s infinite;}
+  #gate h2{margin:0;font-size:clamp(10px,2.4vw,15px);letter-spacing:.62em;color:var(--neon2);font-weight:400;}
+  #gate p{margin:0;max-width:52ch;color:var(--dim);font-size:12px;line-height:1.8;letter-spacing:.06em;}
+  @keyframes flicker{
+    0%,100%{opacity:1}
+    41%{opacity:1}42%{opacity:.55}43%{opacity:1}
+    73%{opacity:1}74%{opacity:.35}75.5%{opacity:1}
+  }
+  #enter{pointer-events:auto;cursor:pointer;font:inherit;font-size:14px;letter-spacing:.34em;
+    text-transform:uppercase;color:#04010a;background:linear-gradient(100deg,var(--neon),var(--neon3),var(--neon2));
+    border:0;padding:17px 42px;border-radius:3px;font-weight:700;
+    box-shadow:0 0 34px rgba(255,45,155,.55);transition:.18s ease;}
+  #enter:hover{transform:scale(1.045);box-shadow:0 0 60px rgba(255,45,155,.8);}
+  #enter:disabled{opacity:.45;cursor:progress;transform:none;}
+  #keys{color:var(--dim);font-size:10px;letter-spacing:.2em;text-transform:uppercase;}
+  #keys kbd{border:1px solid rgba(139,132,173,.45);border-radius:3px;padding:2px 6px;margin:0 2px;
+    font-family:inherit;font-size:10px;color:var(--fg);}
+
+  #err{position:fixed;z-index:30;left:50%;top:18px;transform:translateX(-50%);
+    max-width:min(92vw,660px);display:none;padding:12px 16px;border-radius:3px;
+    background:rgba(46,4,14,.94);border:1px solid #ff3b5c;color:#ffd9e0;
+    font-size:12px;line-height:1.6;letter-spacing:.04em;}
+  #err.show{display:block;}
+  #err code{color:#ff9db0;word-break:break-word;}
+
+  @media (max-width:640px){
+    #hud{font-size:10px;padding:10px 12px;}
+    #hud-left .title{font-size:12px;letter-spacing:.3em;}
+    #controls{right:10px;bottom:10px;gap:6px;}
+    button.ctl{padding:8px 9px;font-size:9px;}
+    #meters{left:10px;bottom:64px;height:32px;}
+    #vol{width:80px;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    #grain{animation:none;} #gate h1{animation:none;}
+  }
+</style>
+</head>
+<body>
+<canvas id="stage-canvas" aria-label="3D konser sahnesi"></canvas>
+<div id="scanlines"></div>
+<div id="vignette"></div>
+<div id="grain"></div>
+<div id="strobe"></div>
+
+<div id="hud" aria-hidden="true">
+  <div id="hud-left" class="panel">
+    <div class="title">MIGUEL &nbsp;PHONK</div>
+    <div class="sub">LIVE &middot; ARENA 3D &middot; WEB AUDIO</div>
+  </div>
+  <div id="hud-right" class="panel">
+    <div>BOLUM <b id="section-tag">—</b></div>
+    <div>BPM <b id="bpm-tag">140</b> &nbsp; BAR <b id="bar-tag">0</b></div>
+    <div>KAMERA <b id="cam-tag">SINEMA</b> &nbsp; FPS <b id="fps-tag">0</b></div>
+  </div>
+</div>
+
+<div id="meters" aria-hidden="true"></div>
+
+<div id="controls">
+  <input id="vol" type="range" min="0" max="100" value="80" aria-label="Ses seviyesi" title="Ses seviyesi" />
+  <button class="ctl" id="btn-play" aria-pressed="true" title="Bosluk">DURAKLAT</button>
+  <button class="ctl" id="btn-cam" title="C">KAMERA: SINEMA</button>
+  <button class="ctl" id="btn-hud" aria-pressed="true" title="H">HUD</button>
+  <button class="ctl" id="btn-full" title="F">TAM EKRAN</button>
+</div>
+
+<div id="gate">
+  <h2>PISANADAM SUNAR</h2>
+  <h1>MIGUEL<br />PHONK</h1>
+  <p>Sarkinin hook notalari tarayicida canli sentezleniyor: 808 sub, cowbell, trap davul ve lead melodi.
+     Isik, lazer ve kalabalik sesin kendisine tepki veriyor. Ses icin dokunma gerekli.</p>
+  <button id="enter" type="button">KONSERI BASLAT</button>
+  <div id="keys">
+    <kbd>Bosluk</kbd> oynat/durdur &nbsp; <kbd>C</kbd> kamera &nbsp; <kbd>H</kbd> hud &nbsp; <kbd>F</kbd> tam ekran &nbsp; <kbd>surukle</kbd> bak
+  </div>
+</div>
+
+<div id="err" role="alert"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+/* ============================================================================
+   MIGUEL PHONK — 3D KONSER
+   Tek dosya. Bagimlilik: three.js r128 (CDN).
+   Ses: Web Audio API ile canli sentez, ornek dosyasi yok.
+   Gorsel: three.js, ses olaylari kare dongusune zamanlanmis kuyrukla besleniyor.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- yapilandirma */
+var QS = new URLSearchParams(location.search);
+
+function qsNumber(key, fallback, min, max) {
+  var raw = QS.get(key);
+  if (raw === null || raw === "") return fallback;
+  var n = parseFloat(raw);
+  if (!isFinite(n)) { warn("Gecersiz '" + key + "' parametresi: " + raw + " -> " + fallback); return fallback; }
+  return Math.min(max, Math.max(min, n));
+}
+
+var CONFIG = {
+  bpm:      qsNumber("bpm", 140, 60, 200),
+  master:   qsNumber("vol", 0.8, 0, 1),
+  quality:  (QS.get("quality") || "auto").toLowerCase(),
+  debug:    QS.get("debug") === "1",
+  camera:   (QS.get("cam") || "cinema").toLowerCase(),
+  autoplay: QS.get("autoplay") !== "0"
+};
+
+/* ---------------------------------------------------------------- log / hata */
+var REDUCED_MOTION = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+var LOG_PREFIX = "[phonk]";
+function log()  { if (CONFIG.debug) console.log.apply(console, [LOG_PREFIX].concat([].slice.call(arguments))); }
+function warn() { console.warn.apply(console, [LOG_PREFIX].concat([].slice.call(arguments))); }
+function fail(scope, e) {
+  console.error(LOG_PREFIX, scope, e);
+  var box = document.getElementById("err");
+  if (!box) return;
+  box.innerHTML = "<b>" + scope + "</b><br /><code>" +
+    String((e && e.message) || e).replace(/[<>&]/g, function (c) {
+      return { "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c];
+    }) + "</code>";
+  box.classList.add("show");
+}
+
+/* ---------------------------------------------------------------- yardimcilar */
+function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function rand(a, b) { return a + Math.random() * (b - a); }
+function midiToHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+/* Cihaz gucune gore kalite secimi. */
+function detectQuality() {
+  if (CONFIG.quality === "low" || CONFIG.quality === "high" || CONFIG.quality === "ultra") return CONFIG.quality;
+  var mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  var mem = navigator.deviceMemory || 4;
+  var cores = navigator.hardwareConcurrency || 4;
+  if (mobile || mem <= 2 || cores <= 2) return "low";
+  if (mem >= 8 && cores >= 8) return "ultra";
+  return "high";
+}
+var QUALITY = detectQuality();
+var TIER = {
+  low:   { crowd: 420,  phones: 90,  lasers: 6,  pixelRatio: 1.25, ledCols: 24, ledRows: 8,  sparks: 220 },
+  high:  { crowd: 1200, phones: 240, lasers: 10, pixelRatio: 1.7,  ledCols: 34, ledRows: 12, sparks: 520 },
+  ultra: { crowd: 2200, phones: 420, lasers: 14, pixelRatio: 2.0,  ledCols: 44, ledRows: 14, sparks: 900 }
+}[QUALITY];
+log("kalite:", QUALITY, TIER);
+
+/* ============================================================================
+   1) SARKI — Miguel phonk hook'unun nota haritasi
+   Si minor (B minor): B C# D E F# G A  ->  59 61 62 64 66 67 69
+   16'lik grid, bar = 16 adim. Bass 808 akor koklerini takip eder.
+   ========================================================================== */
+
+var STEPS_PER_BAR = 16;
+
+/* 4 barlik akor dongusu: Bm - G - D - A */
+var CHORDS = [
+  { root: 35, pad: [59, 62, 66] },  /* Bm  */
+  { root: 31, pad: [55, 59, 62] },  /* G   */
+  { root: 38, pad: [57, 62, 66] },  /* D   */
+  { root: 33, pad: [57, 61, 64] }   /* A   */
+];
+
+/* Davul gridleri: 1 = vurus, 2 = aksanli vurus */
+var DRUMS = {
+  kick:    [1,0,0,0, 0,0,1,0, 1,0,0,0, 0,0,1,0],
+  kickAlt: [1,0,0,1, 0,0,1,0, 0,1,0,0, 1,0,0,1],
+  snare:   [0,0,0,0, 0,0,0,0, 2,0,0,0, 0,0,0,0],
+  clapEx:  [0,0,0,0, 0,0,0,0, 2,0,0,0, 0,0,1,1],
+  hat:     [1,0,1,0, 1,0,1,1, 1,0,1,0, 1,1,1,0],
+  hatRoll: [1,1,1,0, 1,1,1,1, 1,1,1,0, 1,1,1,1],
+  cowbell: [2,0,0,1, 0,1,0,0, 2,0,1,0, 0,1,0,1]
+};
+
+/* Lead hook — 4 bar, [adim, midi, 16'lik cinsinden sure] */
+var LEAD = [
+  [[0,66,2],[2,69,2],[4,66,2],[6,64,1],[7,62,1],[8,64,4],[12,62,2],[14,61,2]],
+  [[0,59,4],[4,62,2],[6,64,2],[8,66,4],[12,64,2],[14,62,2]],
+  [[0,66,2],[2,69,2],[4,71,2],[6,69,1],[7,66,1],[8,64,4],[12,66,2],[14,64,2]],
+  [[0,59,2],[2,61,2],[4,62,4],[8,66,6],[14,64,2]]
+];
+
+/* Bass 808 — adim ve akor koke gore ofset (yariton) */
+var BASS = [
+  [[0,0,6],[6,0,2],[8,0,5],[14,12,2]],
+  [[0,0,6],[6,0,2],[8,0,4],[12,7,4]],
+  [[0,0,6],[6,12,2],[8,0,6],[14,0,2]],
+  [[0,0,8],[8,0,4],[12,7,2],[14,12,2]]
+];
+
+/* Bolum dizilimi — her bolum hangi partlari acar */
+var ARRANGEMENT = [
+  { name: "GIRIS",   bars: 4, parts: { pad:1, lead:0.55, cowbell:1, hat:0, kick:0, snare:0, bass:0 }, energy: 0.22, cam: 0 },
+  { name: "YUKSELIS",bars: 4, parts: { pad:1, lead:0.8,  cowbell:1, hat:1, kick:0, snare:0, bass:0.6, riser:1 }, energy: 0.5, cam: 1 },
+  { name: "DROP",    bars: 8, parts: { pad:0.7, lead:1, cowbell:1, hat:1, kick:1, snare:1, bass:1 }, energy: 1.0, cam: 2 },
+  { name: "BREAK",   bars: 4, parts: { pad:1, lead:0.7, cowbell:0, hat:0, kick:0, snare:0, bass:0.4 }, energy: 0.3, cam: 3 },
+  { name: "DROP II", bars: 8, parts: { pad:0.6, lead:1, cowbell:1, hat:2, kick:2, snare:2, bass:1 }, energy: 1.0, cam: 4 },
+  { name: "OUTRO",   bars: 4, parts: { pad:1, lead:0.5, cowbell:1, hat:0, kick:0, snare:0, bass:0.3 }, energy: 0.25, cam: 5 }
+];
+var TOTAL_BARS = ARRANGEMENT.reduce(function (a, s) { return a + s.bars; }, 0);
+
+function sectionAtBar(bar) {
+  var b = ((bar % TOTAL_BARS) + TOTAL_BARS) % TOTAL_BARS, acc = 0;
+  for (var i = 0; i < ARRANGEMENT.length; i++) {
+    if (b < acc + ARRANGEMENT[i].bars) return { index: i, def: ARRANGEMENT[i], barInSection: b - acc };
+    acc += ARRANGEMENT[i].bars;
+  }
+  return { index: 0, def: ARRANGEMENT[0], barInSection: 0 };
+}
+
+/* ============================================================================
+   2) SES MOTORU
+   ========================================================================== */
+
+function AudioEngine() {
+  this.ctx = null;
+  this.ready = false;
+  this.playing = false;
+  this.startTime = 0;
+  this.stepIndex = 0;       /* mutlak 16'lik sayaci */
+  this.lookahead = 0.12;    /* saniye */
+  this.timerId = null;
+  this.events = [];         /* gorsel olay kuyrugu: {t, type, v} */
+  this.noiseBuf = null;
+  this.nodes = {};
+}
+
+AudioEngine.prototype.init = function () {
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) throw new Error("Bu tarayici Web Audio API desteklemiyor.");
+  var ctx = this.ctx = new AC({ latencyHint: "interactive" });
+
+  var master = ctx.createGain();
+  master.gain.value = CONFIG.master;
+
+  var comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -12; comp.knee.value = 22;
+  comp.ratio.value = 8; comp.attack.value = 0.003; comp.release.value = 0.16;
+
+  var analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  analyser.smoothingTimeConstant = 0.72;
+
+  /* reverb bus */
+  var conv = ctx.createConvolver();
+  conv.buffer = this.makeImpulse(2.6, 2.4);
+  var revGain = ctx.createGain(); revGain.gain.value = 0.32;
+  var revSend = ctx.createGain(); revSend.gain.value = 1;
+
+  /* delay bus (lead icin) */
+  var delay = ctx.createDelay(1.0);
+  delay.delayTime.value = (60 / CONFIG.bpm) * 0.75;
+  var fb = ctx.createGain(); fb.gain.value = 0.34;
+  var delayMix = ctx.createGain(); delayMix.gain.value = 0.26;
+  var delaySend = ctx.createGain(); delaySend.gain.value = 1;
+
+  delaySend.connect(delay); delay.connect(fb); fb.connect(delay);
+  delay.connect(delayMix); delayMix.connect(comp);
+
+  revSend.connect(conv); conv.connect(revGain); revGain.connect(comp);
+
+  comp.connect(master); master.connect(analyser); analyser.connect(ctx.destination);
+
+  this.nodes = { master: master, comp: comp, analyser: analyser, revSend: revSend, delaySend: delaySend, delay: delay };
+  this.freqData = new Uint8Array(analyser.frequencyBinCount);
+  this.noiseBuf = this.makeNoise(2);
+  this.ready = true;
+  log("audio hazir, samplerate", ctx.sampleRate);
+};
+
+AudioEngine.prototype.makeNoise = function (sec) {
+  var n = Math.floor(this.ctx.sampleRate * sec);
+  var buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+  var d = buf.getChannelData(0);
+  for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+};
+
+AudioEngine.prototype.makeImpulse = function (sec, decay) {
+  var rate = this.ctx.sampleRate, n = Math.floor(rate * sec);
+  var buf = this.ctx.createBuffer(2, n, rate);
+  for (var c = 0; c < 2; c++) {
+    var d = buf.getChannelData(c);
+    for (var i = 0; i < n; i++) {
+      var t = i / n;
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay) * (1 - t * 0.2);
+    }
+  }
+  return buf;
+};
+
+AudioEngine.prototype.shaper = function (amount) {
+  var n = 1024, curve = new Float32Array(n), k = amount;
+  for (var i = 0; i < n; i++) {
+    var x = (i * 2) / n - 1;
+    curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
+  }
+  var ws = this.ctx.createWaveShaper();
+  ws.curve = curve; ws.oversample = "2x";
+  return ws;
+};
+
+AudioEngine.prototype.noiseSource = function () {
+  var s = this.ctx.createBufferSource();
+  s.buffer = this.noiseBuf; s.loop = true;
+  return s;
+};
+
+AudioEngine.prototype.push = function (t, type, v) {
+  this.events.push({ t: t, type: type, v: v === undefined ? 1 : v });
+  if (this.events.length > 512) this.events.splice(0, this.events.length - 512);
+};
+
+/* ------------------------------------------------------------- enstrumanlar */
+
+AudioEngine.prototype.kick = function (t, gain) {
+  var ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain();
+  var sh = this.shaper(6);
+  o.type = "sine";
+  o.frequency.setValueAtTime(160, t);
+  o.frequency.exponentialRampToValueAtTime(44, t + 0.06);
+  o.frequency.exponentialRampToValueAtTime(36, t + 0.28);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+  o.connect(g); g.connect(sh); sh.connect(this.nodes.comp);
+  o.start(t); o.stop(t + 0.4);
+
+  /* klik transiyent */
+  var n = this.noiseSource(), ng = ctx.createGain(), hp = ctx.createBiquadFilter();
+  hp.type = "highpass"; hp.frequency.value = 1200;
+  ng.gain.setValueAtTime(gain * 0.5, t);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.02);
+  n.connect(hp); hp.connect(ng); ng.connect(this.nodes.comp);
+  n.start(t); n.stop(t + 0.05);
+
+  this.push(t, "kick", gain);
+};
+
+AudioEngine.prototype.sub808 = function (t, midi, dur, gain) {
+  var ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain();
+  var sh = this.shaper(2.2), lp = ctx.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 260; lp.Q.value = 0.7;
+  var f = midiToHz(midi);
+  o.type = "sine";
+  o.frequency.setValueAtTime(f * 2.2, t);
+  o.frequency.exponentialRampToValueAtTime(f, t + 0.075);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
+  g.gain.setValueAtTime(gain, t + Math.max(0.05, dur * 0.6));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(sh); sh.connect(lp); lp.connect(this.nodes.comp);
+  o.start(t); o.stop(t + dur + 0.05);
+  this.push(t, "bass", gain);
+};
+
+AudioEngine.prototype.cowbell = function (t, gain, accent) {
+  var ctx = this.ctx;
+  var base = accent ? 560 : 540;
+  var bp = ctx.createBiquadFilter();
+  bp.type = "bandpass"; bp.frequency.value = base * 1.6; bp.Q.value = 2.6;
+  var g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + (accent ? 0.26 : 0.14));
+  [base, base * 1.4815].forEach(function (f) {
+    var o = ctx.createOscillator();
+    o.type = "square"; o.frequency.value = f;
+    o.connect(bp); o.start(t); o.stop(t + 0.3);
+  });
+  bp.connect(g); g.connect(this.nodes.comp);
+  var send = ctx.createGain(); send.gain.value = 0.5; g.connect(send); send.connect(this.nodes.revSend);
+  this.push(t, "cowbell", gain * (accent ? 1.4 : 1));
+};
+
+AudioEngine.prototype.hat = function (t, gain, open) {
+  var ctx = this.ctx, n = this.noiseSource();
+  var hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 8200;
+  var bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 11000; bp.Q.value = 0.9;
+  var g = ctx.createGain();
+  var dur = open ? 0.16 : 0.038;
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(this.nodes.comp);
+  n.start(t); n.stop(t + dur + 0.02);
+  this.push(t, "hat", gain);
+};
+
+AudioEngine.prototype.snare = function (t, gain) {
+  var ctx = this.ctx, n = this.noiseSource();
+  var bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1900; bp.Q.value = 0.8;
+  var g = ctx.createGain();
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.19);
+  n.connect(bp); bp.connect(g); g.connect(this.nodes.comp);
+  var send = ctx.createGain(); send.gain.value = 0.55; g.connect(send); send.connect(this.nodes.revSend);
+  n.start(t); n.stop(t + 0.22);
+
+  var o = ctx.createOscillator(), og = ctx.createGain();
+  o.type = "triangle";
+  o.frequency.setValueAtTime(230, t);
+  o.frequency.exponentialRampToValueAtTime(150, t + 0.08);
+  og.gain.setValueAtTime(gain * 0.5, t);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+  o.connect(og); og.connect(this.nodes.comp);
+  o.start(t); o.stop(t + 0.12);
+
+  this.push(t, "snare", gain);
+};
+
+AudioEngine.prototype.lead = function (t, midi, dur, gain) {
+  var ctx = this.ctx, f = midiToHz(midi);
+  var g = ctx.createGain(), lp = ctx.createBiquadFilter(), sh = this.shaper(3.5);
+  lp.type = "lowpass"; lp.Q.value = 6;
+  lp.frequency.setValueAtTime(Math.min(9000, f * 10), t);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(420, f * 2.4), t + dur * 0.9);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.014);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  [-7, 0, 7].forEach(function (cents, i) {
+    var o = ctx.createOscillator();
+    o.type = i === 1 ? "square" : "sawtooth";
+    o.frequency.value = f * (i === 2 ? 2 : 1);
+    o.detune.value = cents;
+    o.connect(lp); o.start(t); o.stop(t + dur + 0.06);
+  });
+  lp.connect(sh); sh.connect(g); g.connect(this.nodes.comp);
+  var rs = ctx.createGain(); rs.gain.value = 0.42; g.connect(rs); rs.connect(this.nodes.revSend);
+  var ds = ctx.createGain(); ds.gain.value = 0.4;  g.connect(ds); ds.connect(this.nodes.delaySend);
+  this.push(t, "lead", gain * (midi / 72));
+};
+
+AudioEngine.prototype.pad = function (t, notes, dur, gain) {
+  var ctx = this.ctx, self = this;
+  var g = ctx.createGain(), lp = ctx.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 1500; lp.Q.value = 0.6;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + dur * 0.25);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  notes.forEach(function (m) {
+    [0, -6, 6].forEach(function (det) {
+      var o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = midiToHz(m - 12);
+      o.detune.value = det;
+      o.connect(lp); o.start(t); o.stop(t + dur + 0.1);
+    });
+  });
+  lp.connect(g); g.connect(this.nodes.comp);
+  var rs = ctx.createGain(); rs.gain.value = 0.8; g.connect(rs); rs.connect(this.nodes.revSend);
+  self.push(t, "pad", gain);
+};
+
+AudioEngine.prototype.riser = function (t, dur) {
+  var ctx = this.ctx, n = this.noiseSource();
+  var bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.4;
+  bp.frequency.setValueAtTime(400, t);
+  bp.frequency.exponentialRampToValueAtTime(9000, t + dur);
+  var g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.22, t + dur * 0.92);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  n.connect(bp); bp.connect(g); g.connect(this.nodes.comp);
+  n.start(t); n.stop(t + dur + 0.05);
+  this.push(t, "riser", 1);
+};
+
+AudioEngine.prototype.impact = function (t) {
+  var ctx = this.ctx, n = this.noiseSource();
+  var lp = ctx.createBiquadFilter(); lp.type = "lowpass";
+  lp.frequency.setValueAtTime(2400, t);
+  lp.frequency.exponentialRampToValueAtTime(120, t + 1.4);
+  var g = ctx.createGain();
+  g.gain.setValueAtTime(0.5, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+  n.connect(lp); lp.connect(g); g.connect(this.nodes.comp);
+  var rs = ctx.createGain(); rs.gain.value = 0.9; g.connect(rs); rs.connect(this.nodes.revSend);
+  n.start(t); n.stop(t + 1.7);
+  this.push(t, "impact", 1);
+};
+
+/* ------------------------------------------------------------- sequencer */
+
+AudioEngine.prototype.stepDur = function () { return 60 / CONFIG.bpm / 4; };
+
+AudioEngine.prototype.scheduleStep = function (absStep, t) {
+  var bar = Math.floor(absStep / STEPS_PER_BAR);
+  var s = absStep % STEPS_PER_BAR;
+  var sec = sectionAtBar(bar);
+  var p = sec.def.parts;
+  var chord = CHORDS[bar % CHORDS.length];
+  var sd = this.stepDur();
+  var barPos = sec.barInSection;
+  var lastBar = barPos === sec.def.bars - 1;
+
+  /* --- bolum gecis vurgusu --- */
+  if (s === 0 && barPos === 0 && sec.def.energy >= 1) this.impact(t);
+  if (s === 0 && p.riser) this.riser(t, sd * STEPS_PER_BAR * sec.def.bars);
+
+  /* --- pad --- */
+  if (p.pad && s === 0) this.pad(t, chord.pad, sd * STEPS_PER_BAR * 0.98, 0.055 * p.pad);
+
+  /* --- kick --- */
+  if (p.kick) {
+    var kg = DRUMS[p.kick >= 2 ? "kickAlt" : "kick"];
+    if (kg[s]) this.kick(t, 0.95);
+  }
+
+  /* --- 808 --- */
+  if (p.bass) {
+    var bl = BASS[bar % BASS.length];
+    for (var i = 0; i < bl.length; i++) {
+      if (bl[i][0] === s) this.sub808(t, chord.root + bl[i][1], sd * bl[i][2], 0.62 * p.bass);
+    }
+  }
+
+  /* --- snare / clap --- */
+  if (p.snare) {
+    var sg = DRUMS[p.snare >= 2 ? "clapEx" : "snare"];
+    if (sg[s]) this.snare(t, 0.42);
+  }
+
+  /* --- hat --- */
+  if (p.hat) {
+    var hg = DRUMS[p.hat >= 2 ? "hatRoll" : "hat"];
+    if (hg[s]) this.hat(t, 0.12, s % 8 === 7);
+    if (p.hat >= 2 && lastBar && s >= 12) { this.hat(t + sd * 0.5, 0.1, false); }
+  }
+
+  /* --- cowbell --- */
+  if (p.cowbell) {
+    var cg = DRUMS.cowbell;
+    if (cg[s]) this.cowbell(t, 0.2 * p.cowbell, cg[s] === 2);
+  }
+
+  /* --- lead --- */
+  if (p.lead) {
+    var ll = LEAD[bar % LEAD.length];
+    for (var j = 0; j < ll.length; j++) {
+      if (ll[j][0] === s) this.lead(t, ll[j][1], sd * ll[j][2] * 0.95, 0.16 * p.lead);
+    }
+  }
+
+  /* --- gorsel bar isareti --- */
+  if (s === 0) this.push(t, "bar", bar);
+};
+
+AudioEngine.prototype.tick = function () {
+  if (!this.playing) return;
+  try {
+    var now = this.ctx.currentTime, sd = this.stepDur();
+    while (this.startTime + this.stepIndex * sd < now + this.lookahead) {
+      this.scheduleStep(this.stepIndex, this.startTime + this.stepIndex * sd);
+      this.stepIndex++;
+    }
+  } catch (e) {
+    fail("Sekanser hatasi", e);
+    this.stop();
+  }
+};
+
+AudioEngine.prototype.start = function () {
+  if (!this.ready) throw new Error("Ses motoru hazir degil.");
+  var self = this;
+  return this.ctx.resume().then(function () {
+    self.startTime = self.ctx.currentTime + 0.14;
+    self.stepIndex = 0;
+    self.playing = true;
+    if (self.timerId) clearInterval(self.timerId);
+    self.timerId = setInterval(function () { self.tick(); }, 25);
+    self.tick();
+    log("konser basladi");
+  });
+};
+
+AudioEngine.prototype.pause = function () {
+  if (!this.ctx || !this.playing) return Promise.resolve();
+  this.playing = false;
+  if (this.timerId) { clearInterval(this.timerId); this.timerId = null; }
+  this.events.length = 0;
+  return this.ctx.suspend();
+};
+
+AudioEngine.prototype.resume = function () {
+  if (!this.ctx || this.playing) return Promise.resolve();
+  var self = this;
+  return this.ctx.resume().then(function () {
+    /* duraklamis sureyi telafi et: startTime'i simdiye gore geri kaydir */
+    self.startTime = self.ctx.currentTime - self.stepIndex * self.stepDur() + 0.05;
+    self.playing = true;
+    self.timerId = setInterval(function () { self.tick(); }, 25);
+    self.tick();
+  });
+};
+
+AudioEngine.prototype.stop = function () {
+  this.playing = false;
+  if (this.timerId) { clearInterval(this.timerId); this.timerId = null; }
+};
+
+AudioEngine.prototype.spectrum = function () {
+  if (!this.ready) return null;
+  this.nodes.analyser.getByteFrequencyData(this.freqData);
+  return this.freqData;
+};
+
+AudioEngine.prototype.currentBar = function () {
+  return Math.floor(this.stepIndex / STEPS_PER_BAR);
+};
+
+/* ============================================================================
+   3) 3D SAHNE
+   ========================================================================== */
+
+var PALETTE = [0xff2d9b, 0x22e0ff, 0xa45cff, 0xff6b2d, 0x39ff9e, 0xffe14d];
+
+/* InstancedMesh renkleri: materyalde vertexColors acikken geometride 'color'
+   attribute'u yoksa surucu siyah doner. Beyaz taban rengi ekleyip
+   instanceColor'un carpim yapmasini garantiye aliyoruz. */
+function whiteColors(geo) {
+  var n = geo.attributes.position.count;
+  var arr = new Float32Array(n * 3);
+  arr.fill(1);
+  geo.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+  return geo;
+}
+
+function Stage(canvas) {
+  this.canvas = canvas;
+  this.clock = null;
+  this.pulse = { kick: 0, snare: 0, bass: 0, lead: 0, cowbell: 0, impact: 0, riser: 0 };
+  this.energy = 0.2;
+  this.colorIndex = 0;
+  this.camMode = ["cinema", "orbit", "crowd"].indexOf(CONFIG.camera) >= 0 ? CONFIG.camera : "cinema";
+  this.orbit = { theta: 0, phi: 1.15, radius: 46, targetTheta: 0, targetPhi: 1.15, dragging: false, lx: 0, ly: 0 };
+  this.shake = 0;
+  this.frame = 0;
+}
+
+Stage.prototype.init = function () {
+  if (typeof THREE === "undefined") throw new Error("three.js yuklenemedi (CDN engellenmis olabilir).");
+
+  var r = this.renderer = new THREE.WebGLRenderer({
+    canvas: this.canvas, antialias: QUALITY !== "low", alpha: false, powerPreference: "high-performance"
+  });
+  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, TIER.pixelRatio));
+  r.setSize(window.innerWidth, window.innerHeight, false);
+  r.outputEncoding = THREE.sRGBEncoding;
+  r.toneMapping = THREE.ACESFilmicToneMapping;
+  r.toneMappingExposure = 1.15;
+
+  var scene = this.scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x04010a);
+  scene.fog = new THREE.FogExp2(0x08021a, 0.0125);
+
+  this.camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 600);
+  this.camera.position.set(0, 12, 46);
+  this.camLook = new THREE.Vector3(0, 6, 0);
+  this.camGoal = { pos: new THREE.Vector3(0, 12, 46), look: new THREE.Vector3(0, 6, 0) };
+
+  this.glowTex = this.makeGlowTexture();
+
+  this.buildFloor();
+  this.buildStage();
+  this.buildLedWall();
+  this.buildTruss();
+  this.buildSpeakers();
+  this.buildPerformer();
+  this.buildLights();
+  this.buildLasers();
+  this.buildCrowd();
+  this.buildSparks();
+  this.buildHaze();
+
+  this.clock = new THREE.Clock();
+  this.bindInput();
+  log("sahne kuruldu", r.info.render);
+};
+
+/* ------------------------------------------------------------ dokular */
+Stage.prototype.makeGlowTexture = function () {
+  var c = document.createElement("canvas");
+  c.width = c.height = 128;
+  var g = c.getContext("2d");
+  var grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.25, "rgba(255,255,255,.5)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  var t = new THREE.CanvasTexture(c);
+  t.needsUpdate = true;
+  return t;
+};
+
+Stage.prototype.glowSprite = function (color, size) {
+  var m = new THREE.SpriteMaterial({
+    map: this.glowTex, color: color, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85
+  });
+  var s = new THREE.Sprite(m);
+  s.scale.set(size, size, 1);
+  return s;
+};
+
+/* ------------------------------------------------------------ zemin */
+Stage.prototype.buildFloor = function () {
+  var geo = new THREE.PlaneGeometry(400, 400);
+  var mat = new THREE.MeshStandardMaterial({
+    color: 0x07030f, roughness: 0.22, metalness: 0.95
+  });
+  var floor = new THREE.Mesh(geo, mat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0;
+  this.scene.add(floor);
+
+  var grid = new THREE.GridHelper(400, 100, 0xff2d9b, 0x1b0b33);
+  grid.material.transparent = true;
+  grid.material.opacity = 0.22;
+  grid.position.y = 0.02;
+  this.grid = grid;
+  this.scene.add(grid);
+};
+
+/* ------------------------------------------------------------ sahne platformu */
+Stage.prototype.buildStage = function () {
+  var g = new THREE.Group();
+
+  var deck = new THREE.Mesh(
+    new THREE.BoxGeometry(46, 2.4, 18),
+    new THREE.MeshStandardMaterial({ color: 0x120726, roughness: 0.5, metalness: 0.7 })
+  );
+  deck.position.set(0, 1.2, -14);
+  g.add(deck);
+
+  /* on kenar LED seridi */
+  var strip = new THREE.Mesh(
+    new THREE.BoxGeometry(46, 0.5, 0.4),
+    new THREE.MeshBasicMaterial({ color: 0xff2d9b, toneMapped: false })
+  );
+  strip.position.set(0, 2.1, -5.05);
+  this.stageStrip = strip;
+  g.add(strip);
+
+  /* dj booth */
+  var booth = new THREE.Mesh(
+    new THREE.BoxGeometry(9, 3.2, 3.2),
+    new THREE.MeshStandardMaterial({ color: 0x1a0b33, roughness: 0.35, metalness: 0.8 })
+  );
+  booth.position.set(0, 4, -12);
+  g.add(booth);
+
+  var boothFace = new THREE.Mesh(
+    new THREE.PlaneGeometry(8.4, 2.6),
+    new THREE.MeshBasicMaterial({ color: 0x22e0ff, transparent: true, opacity: 0.8, toneMapped: false })
+  );
+  boothFace.position.set(0, 4, -10.38);
+  this.boothFace = boothFace;
+  g.add(boothFace);
+
+  /* sahne basamaklari */
+  for (var i = 0; i < 3; i++) {
+    var st = new THREE.Mesh(
+      new THREE.BoxGeometry(14 - i * 2, 0.8, 1.6),
+      new THREE.MeshStandardMaterial({ color: 0x0e0520, roughness: 0.6, metalness: 0.5 })
+    );
+    st.position.set(0, 0.4 + i * 0.8, -4.2 - i * 1.6);
+    g.add(st);
+  }
+
+  this.scene.add(g);
+  this.stageGroup = g;
+};
+
+/* ------------------------------------------------------------ LED duvar */
+Stage.prototype.buildLedWall = function () {
+  var cols = TIER.ledCols, rows = TIER.ledRows;
+  this.led = { cols: cols, rows: rows };
+  var w = 44 / cols, h = 16 / rows;
+  var geo = whiteColors(new THREE.PlaneGeometry(w * 0.86, h * 0.82));
+  var mat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+  var mesh = new THREE.InstancedMesh(geo, mat, cols * rows);
+  mesh.frustumCulled = false;
+  var d = new THREE.Object3D(), c = new THREE.Color();
+  var i = 0;
+  for (var y = 0; y < rows; y++) {
+    for (var x = 0; x < cols; x++) {
+      d.position.set(-22 + w * (x + 0.5), 4.6 + h * (y + 0.5), -22.6);
+      d.rotation.set(0, 0, 0);
+      d.updateMatrix();
+      mesh.setMatrixAt(i, d.matrix);
+      c.setHex(0x080312);
+      mesh.setColorAt(i, c);
+      i++;
+    }
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  this.ledMesh = mesh;
+  this.scene.add(mesh);
+
+  /* duvar cercevesi */
+  var frame = new THREE.Mesh(
+    new THREE.BoxGeometry(46, 18, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0x08040f, roughness: 0.9, metalness: 0.3 })
+  );
+  frame.position.set(0, 12.6, -23.4);
+  this.scene.add(frame);
+};
+
+/* ------------------------------------------------------------ truss */
+Stage.prototype.buildTruss = function () {
+  var mat = new THREE.MeshStandardMaterial({ color: 0x2a2340, roughness: 0.65, metalness: 0.85 });
+  var top = new THREE.Mesh(new THREE.BoxGeometry(52, 1, 1), mat);
+  top.position.set(0, 23, -6);
+  this.scene.add(top);
+  var back = new THREE.Mesh(new THREE.BoxGeometry(52, 1, 1), mat);
+  back.position.set(0, 23, -20);
+  this.scene.add(back);
+  [-25, 25].forEach(function (x) {
+    var col = new THREE.Mesh(new THREE.BoxGeometry(1, 23, 1), mat);
+    col.position.set(x, 11.5, -6);
+    this.scene.add(col);
+    var col2 = new THREE.Mesh(new THREE.BoxGeometry(1, 23, 1), mat);
+    col2.position.set(x, 11.5, -20);
+    this.scene.add(col2);
+  }, this);
+};
+
+/* ------------------------------------------------------------ hoparlorler */
+Stage.prototype.buildSpeakers = function () {
+  this.woofers = [];
+  var self = this;
+  [-20, 20].forEach(function (x) {
+    var g = new THREE.Group();
+    var cab = new THREE.Mesh(
+      new THREE.BoxGeometry(6, 14, 5),
+      new THREE.MeshStandardMaterial({ color: 0x0b0616, roughness: 0.85, metalness: 0.25 })
+    );
+    cab.position.set(0, 7, 0);
+    g.add(cab);
+    for (var i = 0; i < 3; i++) {
+      var cone = new THREE.Mesh(
+        new THREE.CircleGeometry(1.9, 24),
+        new THREE.MeshStandardMaterial({ color: 0x1c1230, roughness: 0.5, metalness: 0.6 })
+      );
+      cone.position.set(0, 3 + i * 4, 2.55);
+      g.add(cone);
+      self.woofers.push(cone);
+    }
+    g.position.set(x, 0, -6);
+    self.scene.add(g);
+  });
+};
+
+/* ------------------------------------------------------------ sanatci */
+Stage.prototype.buildPerformer = function () {
+  var g = new THREE.Group();
+  var mat = new THREE.MeshStandardMaterial({
+    color: 0x08040f, roughness: 0.35, metalness: 0.75,
+    emissive: 0xff2d9b, emissiveIntensity: 0.5
+  });
+  var bodyGeo = THREE.CapsuleGeometry ?
+    new THREE.CapsuleGeometry(0.55, 1.5, 4, 10) :
+    new THREE.CylinderGeometry(0.55, 0.6, 2.2, 12);
+  var body = new THREE.Mesh(bodyGeo, mat);
+  body.position.set(0, 6.6, -13.6);
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 12), mat);
+  head.position.set(0, 8.1, -13.6);
+  var armL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.6, 0.28), mat);
+  var armR = armL.clone();
+  armL.position.set(-0.8, 7.1, -13.4);
+  armR.position.set(0.8, 7.1, -13.4);
+  g.add(body, head, armL, armR);
+  this.performer = { group: g, body: body, head: head, armL: armL, armR: armR };
+  this.scene.add(g);
+
+  var halo = this.glowSprite(0xff2d9b, 4.5);
+  halo.position.set(0, 7.4, -13.9);
+  this.performerHalo = halo;
+  this.scene.add(halo);
+};
+
+/* ------------------------------------------------------------ isiklar */
+Stage.prototype.buildLights = function () {
+  this.scene.add(new THREE.AmbientLight(0x1a0b34, 0.32));
+  var hemi = new THREE.HemisphereLight(0x2a1352, 0x03000a, 0.22);
+  this.scene.add(hemi);
+
+  this.spots = [];
+  var xs = [-18, -6, 6, 18];
+  for (var i = 0; i < xs.length; i++) {
+    var col = PALETTE[i % PALETTE.length];
+    var sp = new THREE.SpotLight(col, 2.2, 130, Math.PI / 13, 0.45, 1.2);
+    sp.position.set(xs[i], 22.2, -8);
+    sp.target.position.set(xs[i] * 0.4, 0, 8);
+    this.scene.add(sp, sp.target);
+
+    /* fake volumetrik koni */
+    var cone = new THREE.Mesh(
+      new THREE.ConeGeometry(4.6, 30, 20, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: col, transparent: true, opacity: 0.06,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
+      })
+    );
+    cone.position.set(xs[i], 7.5, -4);
+    this.scene.add(cone);
+
+    var head = this.glowSprite(col, 3.2);
+    head.position.set(xs[i], 22.2, -8);
+    this.scene.add(head);
+
+    this.spots.push({ light: sp, cone: cone, head: head, base: xs[i], phase: i * 1.37, color: col });
+  }
+
+  /* bass ile atan hoparlor isiklari */
+  this.bassLights = [];
+  [-20, 20].forEach(function (x) {
+    var pl = new THREE.PointLight(0xff2d9b, 0.35, 26, 2.4);
+    pl.position.set(x, 8, 1.5);
+    this.scene.add(pl);
+    this.bassLights.push(pl);
+  }, this);
+
+  /* sahne on dolgu */
+  this.frontLight = new THREE.PointLight(0x22e0ff, 1.0, 70, 2);
+  this.frontLight.position.set(0, 10, -6);
+  this.scene.add(this.frontLight);
+};
+
+/* ------------------------------------------------------------ lazerler */
+Stage.prototype.buildLasers = function () {
+  this.lasers = [];
+  var n = TIER.lasers;
+  for (var i = 0; i < n; i++) {
+    var col = PALETTE[i % PALETTE.length];
+    var geo = new THREE.CylinderGeometry(0.055, 0.055, 90, 5, 1, true);
+    geo.translate(0, -45, 0);
+    var mat = new THREE.MeshBasicMaterial({
+      color: col, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    var m = new THREE.Mesh(geo, mat);
+    m.position.set(-24 + (48 / (n - 1)) * i, 22.4, -18);
+    this.scene.add(m);
+    this.lasers.push({ mesh: m, phase: rand(0, Math.PI * 2), speed: rand(0.5, 1.4), color: col });
+  }
+};
+
+/* ------------------------------------------------------------ kalabalik */
+Stage.prototype.buildCrowd = function () {
+  var count = TIER.crowd;
+  var geo = new THREE.BoxGeometry(0.46, 1.75, 0.32);
+  geo.translate(0, 0.875, 0);
+  whiteColors(geo);
+  var mat = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.15, vertexColors: true });
+  var mesh = new THREE.InstancedMesh(geo, mat, count);
+
+  var headGeo = whiteColors(new THREE.SphereGeometry(0.22, 8, 6));
+  var headMesh = new THREE.InstancedMesh(headGeo, mat.clone(), count);
+
+  this.crowdData = new Array(count);
+  var d = new THREE.Object3D(), c = new THREE.Color();
+  for (var i = 0; i < count; i++) {
+    var row = Math.floor(i / 44);
+    var z = 3 + row * 1.35 + rand(-0.4, 0.4);
+    var spread = 16 + row * 0.85;
+    var x = rand(-spread, spread);
+    var info = {
+      x: x, z: z,
+      phase: rand(0, Math.PI * 2),
+      speed: rand(0.8, 1.35),
+      height: rand(0.85, 1.12),
+      jump: 0,
+      dist: Math.sqrt(x * x + z * z)
+    };
+    this.crowdData[i] = info;
+
+    d.position.set(x, 0, z);
+    d.rotation.set(0, rand(-0.35, 0.35), 0);
+    d.scale.set(1, info.height, 1);
+    d.updateMatrix();
+    mesh.setMatrixAt(i, d.matrix);
+    headMesh.setMatrixAt(i, d.matrix);
+
+    var shade = rand(0.05, 0.13);
+    c.setRGB(shade * 0.85, shade * 0.55, shade * 1.35);
+    mesh.setColorAt(i, c);
+    c.multiplyScalar(0.55);
+    headMesh.setColorAt(i, c);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  headMesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  if (headMesh.instanceColor) headMesh.instanceColor.needsUpdate = true;
+  mesh.frustumCulled = false;
+  headMesh.frustumCulled = false;
+  this.crowd = mesh;
+  this.crowdHeads = headMesh;
+  this.scene.add(mesh, headMesh);
+
+  /* telefon isiklari */
+  var pGeo = whiteColors(new THREE.PlaneGeometry(0.1, 0.17));
+  var pMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, vertexColors: true
+  });
+  var phones = new THREE.InstancedMesh(pGeo, pMat, TIER.phones);
+  this.phoneData = new Array(TIER.phones);
+  for (var k = 0; k < TIER.phones; k++) {
+    var src = this.crowdData[Math.floor(Math.random() * count)];
+    this.phoneData[k] = { x: src.x + rand(-0.2, 0.2), z: src.z, phase: rand(0, 6.28), speed: rand(0.4, 1.1) };
+    c.setHex(0xfff3d0);
+    phones.setColorAt(k, c);
+  }
+  if (phones.instanceColor) phones.instanceColor.needsUpdate = true;
+  phones.frustumCulled = false;
+  this.phones = phones;
+  this.scene.add(phones);
+};
+
+/* ------------------------------------------------------------ kivilcim / konfeti */
+Stage.prototype.buildSparks = function () {
+  var n = TIER.sparks;
+  var pos = new Float32Array(n * 3);
+  var col = new Float32Array(n * 3);
+  this.sparkData = new Array(n);
+  var c = new THREE.Color();
+  for (var i = 0; i < n; i++) {
+    this.sparkData[i] = { life: 0, vx: 0, vy: 0, vz: 0 };
+    pos[i * 3] = 0; pos[i * 3 + 1] = -50; pos[i * 3 + 2] = 0;
+    c.setHex(PALETTE[i % PALETTE.length]);
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  var mat = new THREE.PointsMaterial({
+    size: 0.42, vertexColors: true, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false, map: this.glowTex
+  });
+  this.sparks = new THREE.Points(geo, mat);
+  this.sparks.frustumCulled = false;
+  this.scene.add(this.sparks);
+  this.sparkCursor = 0;
+};
+
+Stage.prototype.burstSparks = function (amount) {
+  var n = this.sparkData.length;
+  var pos = this.sparks.geometry.attributes.position.array;
+  for (var i = 0; i < amount; i++) {
+    var idx = this.sparkCursor = (this.sparkCursor + 1) % n;
+    var side = Math.random() < 0.5 ? -1 : 1;
+    pos[idx * 3] = side * rand(16, 22);
+    pos[idx * 3 + 1] = rand(2, 4);
+    pos[idx * 3 + 2] = rand(-10, -2);
+    var d = this.sparkData[idx];
+    d.vx = -side * rand(1, 5); d.vy = rand(11, 20); d.vz = rand(1, 7);
+    d.life = rand(1.4, 2.6);
+  }
+  this.sparks.geometry.attributes.position.needsUpdate = true;
+};
+
+/* ------------------------------------------------------------ sis */
+Stage.prototype.buildHaze = function () {
+  this.haze = [];
+  var n = QUALITY === "low" ? 8 : 18;
+  for (var i = 0; i < n; i++) {
+    var s = this.glowSprite(PALETTE[i % PALETTE.length], rand(9, 20));
+    s.material.opacity = 0.03;
+    s.position.set(rand(-30, 30), rand(2, 16), rand(-22, 14));
+    this.scene.add(s);
+    this.haze.push({ sprite: s, phase: rand(0, 6.28), speed: rand(0.05, 0.18) });
+  }
+};
+
+/* ------------------------------------------------------------ kamera */
+var SHOTS = [
+  { pos: [0, 17, 54],   look: [0, 8, -10], fov: 55 },   /* 0 genis on   */
+  { pos: [-15, 3.6, 26],look: [0, 8, -13], fov: 62 },   /* 1 kalabalik ici */
+  { pos: [0, 7.5, 19],  look: [0, 7, -14], fov: 64 },   /* 2 drop hero  */
+  { pos: [27, 14, 7],   look: [-4, 8, -14],fov: 52 },   /* 3 yan truss  */
+  { pos: [0, 10, -19],  look: [0, 4, 26],  fov: 68 },   /* 4 dj arkasi  */
+  { pos: [-24, 21, 46], look: [0, 9, -10], fov: 50 }    /* 5 uzak drift */
+];
+
+Stage.prototype.setShot = function (i, variation) {
+  var s = SHOTS[clamp(i | 0, 0, SHOTS.length - 1)];
+  var v = variation || 0;
+  var swing = Math.sin(v * 2.3) * 9;
+  this.camGoal.pos.set(s.pos[0] + swing, s.pos[1] + Math.cos(v * 1.7) * 2.5, s.pos[2] + Math.sin(v) * 4);
+  this.camGoal.look.set(s.look[0], s.look[1], s.look[2]);
+  this.camGoal.fov = s.fov;
+};
+
+Stage.prototype.bindInput = function () {
+  var self = this, el = this.canvas;
+
+  function down(e) {
+    self.orbit.dragging = true;
+    var p = e.touches ? e.touches[0] : e;
+    self.orbit.lx = p.clientX; self.orbit.ly = p.clientY;
+    if (self.camMode !== "orbit") { self.camMode = "orbit"; UI.syncCam(); }
+  }
+  function move(e) {
+    if (!self.orbit.dragging) return;
+    var p = e.touches ? e.touches[0] : e;
+    var dx = p.clientX - self.orbit.lx, dy = p.clientY - self.orbit.ly;
+    self.orbit.lx = p.clientX; self.orbit.ly = p.clientY;
+    self.orbit.targetTheta -= dx * 0.005;
+    self.orbit.targetPhi = clamp(self.orbit.targetPhi - dy * 0.004, 0.18, 1.48);
+    if (e.cancelable) e.preventDefault();
+  }
+  function up() { self.orbit.dragging = false; }
+
+  el.addEventListener("mousedown", down);
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", up);
+  el.addEventListener("touchstart", down, { passive: true });
+  el.addEventListener("touchmove", move, { passive: false });
+  window.addEventListener("touchend", up);
+  el.addEventListener("wheel", function (e) {
+    self.orbit.radius = clamp(self.orbit.radius + e.deltaY * 0.045, 12, 110);
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  window.addEventListener("resize", function () { self.resize(); });
+  el.addEventListener("webglcontextlost", function (e) {
+    e.preventDefault();
+    fail("WebGL baglami kayboldu", new Error("Sayfayi yenileyin."));
+  });
+};
+
+Stage.prototype.resize = function () {
+  try {
+    var w = window.innerWidth, h = window.innerHeight;
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, TIER.pixelRatio));
+    this.renderer.setSize(w, h, false);
+  } catch (e) { fail("Yeniden boyutlandirma", e); }
+};
+
+/* ------------------------------------------------------------ olay tuketimi */
+Stage.prototype.consume = function (engine) {
+  if (!engine || !engine.ready) return;
+  var now = engine.ctx.currentTime, ev = engine.events, hit = 0;
+  while (ev.length && ev[0].t <= now) {
+    var e = ev.shift();
+    switch (e.type) {
+      case "kick":
+        this.pulse.kick = Math.min(1.6, this.pulse.kick + e.v);
+        this.shake = Math.min(1, this.shake + 0.35);
+        this.punchCrowd(0.55);
+        break;
+      case "bass":
+        this.pulse.bass = Math.min(1.5, this.pulse.bass + e.v);
+        break;
+      case "snare":
+        this.pulse.snare = 1;
+        this.laserBurst();
+        UI.strobe(0.13, 70);
+        break;
+      case "cowbell":
+        this.pulse.cowbell = Math.min(1.2, this.pulse.cowbell + e.v * 2);
+        break;
+      case "hat":
+        this.pulse.cowbell = Math.min(1.2, this.pulse.cowbell + e.v * 0.4);
+        break;
+      case "lead":
+        this.pulse.lead = Math.min(1.4, this.pulse.lead + e.v * 3);
+        break;
+      case "impact":
+        this.pulse.impact = 1;
+        this.burstSparks(Math.floor(TIER.sparks * 0.45));
+        this.punchCrowd(1);
+        UI.strobe(0.4, 150);
+        break;
+      case "riser":
+        this.pulse.riser = 1;
+        break;
+      case "bar":
+        this.onBar(e.v);
+        break;
+    }
+    if (++hit > 200) break;
+  }
+};
+
+Stage.prototype.onBar = function (bar) {
+  var sec = sectionAtBar(bar);
+  this.energy = sec.def.energy;
+  this.section = sec;
+  if (this.camMode === "cinema") this.setShot(sec.def.cam, bar * 0.61);
+  UI.setSection(sec.def.name, bar);
+  /* bolum degisiminde palet kaydir */
+  if (sec.barInSection === 0) this.colorIndex = (this.colorIndex + 1) % PALETTE.length;
+};
+
+Stage.prototype.punchCrowd = function (amount) {
+  var d = this.crowdData, step = QUALITY === "low" ? 2 : 1;
+  for (var i = 0; i < d.length; i += step) {
+    d[i].jump = Math.min(1.6, d[i].jump + amount * rand(0.6, 1.25));
+  }
+};
+
+Stage.prototype.laserBurst = function () {
+  for (var i = 0; i < this.lasers.length; i++) this.lasers[i].mesh.material.opacity = 0.55;
+};
+
+/* ------------------------------------------------------------ kare guncelleme */
+var _tmpObj = null, _tmpCol = null;
+
+Stage.prototype.update = function (dt, engine) {
+  if (!_tmpObj) { _tmpObj = new THREE.Object3D(); _tmpCol = new THREE.Color(); }
+  var t = performance.now() / 1000;
+  this.frame++;
+
+  this.consume(engine);
+
+  /* sonumleme */
+  var p = this.pulse;
+  var dec = function (v, k) { return v * Math.exp(-k * dt); };
+  p.kick = dec(p.kick, 7.5);
+  p.bass = dec(p.bass, 4.2);
+  p.snare = dec(p.snare, 9);
+  p.lead = dec(p.lead, 5);
+  p.cowbell = dec(p.cowbell, 12);
+  p.impact = dec(p.impact, 1.6);
+  p.riser = dec(p.riser, 0.7);
+  this.shake = dec(this.shake, 6);
+
+  var energy = this.energy;
+  var spec = engine ? engine.spectrum() : null;
+
+  /* --- LED duvar --- */
+  var led = this.ledMesh, cols = this.led.cols, rows = this.led.rows;
+  if (led && (QUALITY !== "low" || this.frame % 2 === 0)) {
+    var bins = spec ? spec.length : 0;
+    for (var x = 0; x < cols; x++) {
+      var bi = Math.floor(Math.pow(x / cols, 1.6) * (bins * 0.55));
+      var tilt = 0.55 + 1.35 * (x / cols);
+      var amp = spec ? clamp((spec[bi] / 255) * tilt, 0, 1) : 0;
+      var lit = Math.round(amp * rows * 1.15);
+      for (var y = 0; y < rows; y++) {
+        var idx = y * cols + x;
+        if (y < lit) {
+          var hue = 0.92 - (x / cols) * 0.4 + Math.sin(t * 0.25 + this.colorIndex) * 0.03;
+          _tmpCol.setHSL(((hue % 1) + 1) % 1, 1, clamp(0.2 + amp * 0.42, 0, 0.66));
+        } else {
+          _tmpCol.setRGB(0.012, 0.006, 0.03);
+        }
+        led.setColorAt(idx, _tmpCol);
+      }
+    }
+    if (led.instanceColor) led.instanceColor.needsUpdate = true;
+  }
+
+  /* --- sahne seridi + booth --- */
+  var stripCol = PALETTE[this.colorIndex % PALETTE.length];
+  _tmpCol.setHex(stripCol);
+  this.stageStrip.material.color.copy(_tmpCol).multiplyScalar(0.5 + p.kick * 0.9);
+  this.boothFace.material.color.setHSL(0.86 - ((t * 0.05) % 0.36), 1, clamp(0.16 + p.lead * 0.26, 0, 0.55));
+  this.boothFace.material.opacity = 0.5 + p.lead * 0.3;
+
+  /* --- hoparlor konileri --- */
+  for (var w = 0; w < this.woofers.length; w++) {
+    var s = 1 + p.bass * 0.22 + p.kick * 0.14;
+    this.woofers[w].scale.set(s, s, 1);
+    this.woofers[w].position.z = 2.55 + p.kick * 0.22;
+  }
+  this.bassLights.forEach(function (l) {
+    l.intensity = 0.18 + p.bass * 1.7;
+    l.color.setHex(stripCol);
+  });
+  this.frontLight.intensity = 0.7 + p.kick * 2.4 + p.impact * 3;
+
+  /* --- spotlar --- */
+  for (var i = 0; i < this.spots.length; i++) {
+    var sp = this.spots[i];
+    var sweep = Math.sin(t * (0.55 + energy * 0.9) + sp.phase) * (7 + energy * 13);
+    sp.light.target.position.set(sp.base * 0.35 + sweep, 0, 10 + Math.cos(t * 0.7 + sp.phase) * 8);
+    sp.light.target.updateMatrixWorld();
+    sp.light.intensity = (0.5 + energy * 2.2) * (0.75 + p.kick * 0.7 + p.impact);
+    var col = PALETTE[(i + this.colorIndex) % PALETTE.length];
+    sp.light.color.setHex(col);
+    sp.cone.material.color.setHex(col);
+    sp.head.material.color.setHex(col);
+    sp.cone.material.opacity = (0.028 + energy * 0.05) * (0.6 + p.kick * 0.8);
+    sp.cone.lookAt(sp.light.target.position);
+    sp.cone.rotateX(Math.PI / 2);
+    sp.cone.position.set(sp.base, 22.2, -8);
+    sp.cone.translateY(-14);
+    sp.head.material.opacity = 0.35 + p.kick * 0.5;
+  }
+
+  /* --- lazerler --- */
+  for (var L = 0; L < this.lasers.length; L++) {
+    var la = this.lasers[L];
+    la.mesh.rotation.z = Math.sin(t * la.speed + la.phase) * 0.85;
+    la.mesh.rotation.x = 0.6 + Math.cos(t * la.speed * 0.7 + la.phase) * 0.35;
+    var target = energy >= 0.9 ? 0.16 + p.snare * 0.5 + p.impact * 0.4 : 0.03 * energy;
+    la.mesh.material.opacity = lerp(la.mesh.material.opacity, target, 0.18);
+    la.mesh.material.color.setHex(PALETTE[(L + this.colorIndex) % PALETTE.length]);
+  }
+
+  /* --- kalabalik --- */
+  var cd = this.crowdData, cm = this.crowd, hm = this.crowdHeads;
+  var stride = (QUALITY === "low" && this.frame % 2 === 1) ? 0 : 1;
+  if (stride) {
+    for (var c = 0; c < cd.length; c++) {
+      var d = cd[c];
+      d.jump = d.jump * Math.exp(-6.5 * dt);
+      var bob = Math.sin(t * (2.2 + energy * 2.4) * d.speed + d.phase) * (0.06 + energy * 0.16);
+      var y = bob + d.jump * 0.85;
+      var sway = Math.sin(t * 1.1 * d.speed + d.phase) * (0.05 + energy * 0.18);
+      _tmpObj.position.set(d.x, Math.max(0, y), d.z);
+      _tmpObj.rotation.set(0, sway, sway * 0.35);
+      _tmpObj.scale.set(1, d.height * (1 + d.jump * 0.05), 1);
+      _tmpObj.updateMatrix();
+      cm.setMatrixAt(c, _tmpObj.matrix);
+      _tmpObj.position.y += 1.75 * d.height * (1 + d.jump * 0.05) + 0.1;
+      _tmpObj.scale.set(1, 1, 1);
+      _tmpObj.updateMatrix();
+      hm.setMatrixAt(c, _tmpObj.matrix);
+    }
+    cm.instanceMatrix.needsUpdate = true;
+    hm.instanceMatrix.needsUpdate = true;
+  }
+
+  /* --- telefon isiklari --- */
+  var ph = this.phones, pd = this.phoneData;
+  for (var k = 0; k < pd.length; k++) {
+    var q = pd[k];
+    var wave = Math.sin(t * q.speed * 1.6 + q.phase);
+    _tmpObj.position.set(q.x, 2.35 + wave * 0.35 + p.kick * 0.25, q.z);
+    _tmpObj.rotation.set(0, 0, wave * 0.4);
+    var sc = 0.7 + energy * 0.6;
+    _tmpObj.scale.set(sc, sc, sc);
+    _tmpObj.updateMatrix();
+    ph.setMatrixAt(k, _tmpObj.matrix);
+  }
+  ph.instanceMatrix.needsUpdate = true;
+  ph.material.opacity = 0.28 + energy * 0.4;
+
+  /* --- sanatci --- */
+  if (this.performer) {
+    var pf = this.performer;
+    var hop = Math.abs(Math.sin(t * 4.4)) * (0.12 + energy * 0.5) + p.kick * 0.35;
+    pf.group.position.y = hop;
+    pf.group.rotation.y = Math.sin(t * 1.3) * 0.28;
+    pf.armL.rotation.z = 0.4 + Math.sin(t * 5.2) * (0.4 + energy);
+    pf.armR.rotation.z = -0.4 - Math.cos(t * 5.2) * (0.4 + energy);
+    pf.body.material.emissiveIntensity = Math.min(1.05, 0.3 + p.lead * 0.7 + p.impact * 0.8);
+    pf.body.material.emissive.setHex(stripCol);
+    this.performerHalo.position.y = 7.4 + hop;
+    this.performerHalo.material.opacity = 0.16 + p.lead * 0.3 + p.impact * 0.25;
+    this.performerHalo.material.color.setHex(stripCol);
+    this.performerHalo.scale.setScalar(4 + p.kick * 1.8 + p.impact * 3);
+  }
+
+  /* --- kivilcimlar --- */
+  var sp2 = this.sparks.geometry.attributes.position.array, sd = this.sparkData;
+  for (var s2 = 0; s2 < sd.length; s2++) {
+    var e2 = sd[s2];
+    if (e2.life <= 0) continue;
+    e2.life -= dt;
+    e2.vy -= 22 * dt;
+    sp2[s2 * 3] += e2.vx * dt;
+    sp2[s2 * 3 + 1] += e2.vy * dt;
+    sp2[s2 * 3 + 2] += e2.vz * dt;
+    if (e2.life <= 0 || sp2[s2 * 3 + 1] < -2) { sp2[s2 * 3 + 1] = -50; e2.life = 0; }
+  }
+  this.sparks.geometry.attributes.position.needsUpdate = true;
+
+  /* --- sis --- */
+  for (var h = 0; h < this.haze.length; h++) {
+    var hz = this.haze[h];
+    hz.sprite.position.x += Math.sin(t * hz.speed + hz.phase) * dt * 2.2;
+    hz.sprite.position.y = 3 + Math.sin(t * hz.speed * 0.6 + hz.phase) * 4 + 6;
+    hz.sprite.material.opacity = 0.016 + energy * 0.028 + p.impact * 0.03;
+    hz.sprite.material.color.setHex(PALETTE[(h + this.colorIndex) % PALETTE.length]);
+  }
+
+  /* --- grid --- */
+  this.grid.material.opacity = 0.12 + energy * 0.2 + p.kick * 0.25;
+
+  /* --- kamera --- */
+  this.updateCamera(dt, t);
+  this.renderer.render(this.scene, this.camera);
+};
+
+Stage.prototype.updateCamera = function (dt, t) {
+  var cam = this.camera, p = this.pulse;
+
+  if (this.camMode === "orbit") {
+    var o = this.orbit;
+    o.theta = lerp(o.theta, o.targetTheta, 1 - Math.exp(-6 * dt));
+    o.phi = lerp(o.phi, o.targetPhi, 1 - Math.exp(-6 * dt));
+    var r = o.radius;
+    this.camGoal.pos.set(
+      Math.sin(o.theta) * Math.cos(o.phi - 0.6) * r,
+      clamp(Math.sin(o.phi) * r * 0.55 + 4, 1.5, 60),
+      Math.cos(o.theta) * Math.cos(o.phi - 0.6) * r
+    );
+    this.camGoal.look.set(0, 7, -12);
+    this.camGoal.fov = 60;
+  } else if (this.camMode === "crowd") {
+    var bob = Math.sin(t * 4.3) * 0.14 + p.kick * 0.35;
+    this.camGoal.pos.set(Math.sin(t * 0.22) * 6, 3.1 + bob, 15 + Math.cos(t * 0.17) * 4);
+    this.camGoal.look.set(Math.sin(t * 0.3) * 2, 7.5, -14);
+    this.camGoal.fov = 68;
+  } else {
+    /* sinema: hedef atislar onBar icinde secilir, burada yavas kaydirma */
+    this.camGoal.pos.x += Math.sin(t * 0.21) * dt * 1.6;
+    this.camGoal.pos.y += Math.sin(t * 0.13) * dt * 0.5;
+  }
+
+  var k = 1 - Math.exp(-(this.camMode === "cinema" ? 1.5 : 7) * dt);
+  cam.position.lerp(this.camGoal.pos, k);
+  this.camLook.lerp(this.camGoal.look, k);
+
+  var sh = this.shake * (0.12 + this.energy * 0.22) * (REDUCED_MOTION ? 0.15 : 1);
+  cam.position.x += rand(-sh, sh);
+  cam.position.y += rand(-sh, sh);
+
+  var goalFov = this.camGoal.fov || 58;
+  var fov = goalFov - p.impact * 5 - p.kick * 1.4;
+  if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = lerp(cam.fov, fov, 0.15); cam.updateProjectionMatrix(); }
+  cam.lookAt(this.camLook);
+  cam.rotation.z += Math.sin(t * 0.4) * 0.012 + this.pulse.snare * 0.006;
+};
+
+/* ============================================================================
+   4) ARAYUZ + BOOT
+   ========================================================================== */
+
+var UI = {
+  els: {},
+  meterBars: [],
+  strobeTimer: null,
+
+  init: function () {
+    var ids = ["gate", "enter", "btn-play", "btn-cam", "btn-hud", "btn-full", "vol",
+               "section-tag", "bpm-tag", "bar-tag", "cam-tag", "fps-tag", "hud", "meters", "strobe"];
+    for (var i = 0; i < ids.length; i++) this.els[ids[i]] = document.getElementById(ids[i]);
+    this.els["bpm-tag"].textContent = Math.round(CONFIG.bpm);
+    this.els.vol.value = Math.round(CONFIG.master * 100);
+
+    for (var b = 0; b < 26; b++) {
+      var bar = document.createElement("div");
+      bar.className = "meter-bar";
+      this.els.meters.appendChild(bar);
+      this.meterBars.push(bar);
+    }
+  },
+
+  setSection: function (name, bar) {
+    this.els["section-tag"].textContent = name;
+    this.els["bar-tag"].textContent = bar;
+  },
+
+  syncCam: function () {
+    var label = { cinema: "SINEMA", orbit: "SERBEST", crowd: "KALABALIK" }[APP.stage.camMode];
+    this.els["btn-cam"].textContent = "KAMERA: " + label;
+    this.els["cam-tag"].textContent = label;
+  },
+
+  strobe: function (opacity, ms) {
+    var el = this.els.strobe;
+    if (!el) return;
+    if (REDUCED_MOTION) opacity = Math.min(opacity, 0.08);
+    el.style.transition = "none";
+    el.style.opacity = String(opacity);
+    if (this.strobeTimer) clearTimeout(this.strobeTimer);
+    this.strobeTimer = setTimeout(function () {
+      el.style.transition = "opacity " + ms + "ms ease-out";
+      el.style.opacity = "0";
+    }, 16);
+  },
+
+  meters: function (spec) {
+    var n = this.meterBars.length;
+    for (var i = 0; i < n; i++) {
+      var idx = Math.floor(Math.pow(i / n, 1.7) * (spec ? spec.length * 0.5 : 0));
+      var v = spec ? spec[idx] / 255 : 0;
+      this.meterBars[i].style.height = (2 + v * 44).toFixed(1) + "px";
+    }
+  }
+};
+
+var APP = {
+  engine: new AudioEngine(),
+  stage: null,
+  running: false,
+  last: 0,
+  fpsAcc: 0,
+  fpsCount: 0
+};
+
+function toggleHud() {
+  var on = APP.hudOn = !APP.hudOn;
+  UI.els.hud.style.opacity = on ? "1" : "0";
+  UI.els.meters.style.opacity = on ? "1" : "0";
+  UI.els["btn-hud"].setAttribute("aria-pressed", on ? "true" : "false");
+}
+
+function cycleCamera() {
+  var order = ["cinema", "orbit", "crowd"];
+  var i = order.indexOf(APP.stage.camMode);
+  APP.stage.camMode = order[(i + 1) % order.length];
+  if (APP.stage.camMode === "cinema" && APP.stage.section) {
+    APP.stage.setShot(APP.stage.section.def.cam, APP.engine.currentBar() * 0.61);
+  }
+  UI.syncCam();
+}
+
+function togglePlay() {
+  var e = APP.engine, btn = UI.els["btn-play"];
+  if (!e.ready) return;
+  if (e.playing) {
+    e.pause().then(function () {
+      btn.textContent = "DEVAM";
+      btn.setAttribute("aria-pressed", "false");
+    })["catch"](function (err) { fail("Duraklatma", err); });
+  } else {
+    e.resume().then(function () {
+      btn.textContent = "DURAKLAT";
+      btn.setAttribute("aria-pressed", "true");
+    })["catch"](function (err) { fail("Devam ettirme", err); });
+  }
+}
+
+function toggleFullscreen() {
+  try {
+    if (!document.fullscreenElement) {
+      var req = document.documentElement.requestFullscreen ||
+                document.documentElement.webkitRequestFullscreen;
+      if (req) req.call(document.documentElement);
+      else warn("Tam ekran desteklenmiyor.");
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    }
+  } catch (e) { fail("Tam ekran", e); }
+}
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  var dt = APP.last ? Math.min(0.05, (now - APP.last) / 1000) : 0.016;
+  APP.last = now;
+  try {
+    APP.stage.update(dt, APP.engine.ready ? APP.engine : null);
+    if (APP.stage.frame % 2 === 0) UI.meters(APP.engine.ready ? APP.engine.spectrum() : null);
+    APP.fpsAcc += dt; APP.fpsCount++;
+    if (APP.fpsAcc >= 0.5) {
+      UI.els["fps-tag"].textContent = Math.round(APP.fpsCount / APP.fpsAcc);
+      APP.fpsAcc = 0; APP.fpsCount = 0;
+    }
+  } catch (e) {
+    fail("Render dongusu", e);
+    throw e;
+  }
+}
+
+function startConcert() {
+  var btn = UI.els.enter;
+  btn.disabled = true;
+  btn.textContent = "BAGLANIYOR...";
+  try {
+    if (!APP.engine.ready) APP.engine.init();
+    APP.engine.nodes.master.gain.value = CONFIG.master;
+    APP.engine.start().then(function () {
+      UI.els.gate.classList.add("hidden");
+      UI.els.hud.setAttribute("aria-hidden", "false");
+      APP.stage.onBar(0);
+    })["catch"](function (e) {
+      btn.disabled = false; btn.textContent = "TEKRAR DENE";
+      fail("Ses baslatilamadi", e);
+    });
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "TEKRAR DENE";
+    fail("Ses motoru", e);
+  }
+}
+
+function boot() {
+  try {
+    UI.init();
+    APP.hudOn = true;
+    APP.stage = new Stage(document.getElementById("stage-canvas"));
+    APP.stage.init();
+    APP.stage.setShot(0, 0);
+    UI.syncCam();
+    requestAnimationFrame(loop);
+  } catch (e) {
+    fail("Sahne kurulamadi", e);
+    return;
+  }
+
+  UI.els.enter.addEventListener("click", startConcert);
+  UI.els["btn-play"].addEventListener("click", togglePlay);
+  UI.els["btn-cam"].addEventListener("click", cycleCamera);
+  UI.els["btn-hud"].addEventListener("click", toggleHud);
+  UI.els["btn-full"].addEventListener("click", toggleFullscreen);
+  UI.els.vol.addEventListener("input", function () {
+    CONFIG.master = clamp(parseInt(this.value, 10) / 100, 0, 1);
+    if (APP.engine.ready) {
+      APP.engine.nodes.master.gain.setTargetAtTime(CONFIG.master, APP.engine.ctx.currentTime, 0.03);
+    }
+  });
+
+  window.addEventListener("keydown", function (e) {
+    if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+    var k = e.key.toLowerCase();
+    if (k === " " || e.code === "Space") { e.preventDefault(); APP.engine.ready ? togglePlay() : startConcert(); }
+    else if (k === "c") cycleCamera();
+    else if (k === "h") toggleHud();
+    else if (k === "f") toggleFullscreen();
+    else if (k === "escape" && document.fullscreenElement) toggleFullscreen();
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden && APP.engine.playing) {
+      togglePlay();
+      log("sekme gizlendi, duraklatildi");
+    }
+  });
+
+  window.addEventListener("error", function (ev) {
+    fail("Beklenmeyen hata", ev.error || new Error(ev.message));
+  });
+
+  log("boot tamam. kalite:", QUALITY, "bpm:", CONFIG.bpm);
+}
+
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+else boot();
+</script>
+</body>
+</html>
