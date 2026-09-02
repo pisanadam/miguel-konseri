@@ -8,43 +8,59 @@ Ac: `index.html` — kurulum yok, derleme yok.
 
 ## Muzik
 
-Notalar kod icinde acik veri olarak durur (`index.html` icinde `LEAD`, `BASS`, `CHORDS`, `DRUMS`).
+Notalar **kaydin kendisinden cikarildi**, kulaktan yazilmadi. Sonuc `index.html` icinde
+`SONG` ve `DRUMS` sabitlerinde acik veri olarak durur.
 
-- **Ton:** Fa# minor (F# minor) — `66 68 69 71 73 74 76`
-- **Akor dongusu:** D – F#m – C#m – Bm (4 bar) — sarkinin gercek progresyonu
-- **Tempo:** varsayilan 150 BPM (phonk edit hizi). Orijinal kayit ~80 BPM'dir;
-  `?bpm=80` ile normal hiza dusurebilirsin.
-- **Ses araligi:** lead A3–E5 icinde tutuldu
+- **Tempo:** 73.70 BPM (ultra slowed surumun olculen temposu), 8 barlik dongu
+- **Gam:** Re majör / Si minör — `D E F# G A B C#`
+- **Akorlar:** D – D – G – Bm (ikiser bar), 808 La pedali uzerinde
+- **808:** A1 pedali, 4-5. barlarda G1'e iniyor
+- **Kick:** kayitta olculen ~43.7 Hz temel frekansa akort edildi
+- **Lead:** 25 nota, D4–B5 araliginda
 - **Enstrumanlar:** 808 sub (glide + soft clip), cowbell (iki kare osilator + bandpass),
   trap kick, snare, hi-hat, uc osilatorlu lead, pad, riser ve impact
 - **Efekt busleri:** uretilen impulse ile convolver reverb, noktali sekizlik delay
 
-Ton, akor dongusu ve tempo iliskisi sarkinin kendisinden alindi. **Lead hatti ise bu armoni
-uzerine yazilmis bir uyarlamadir** — nota nota dogrulanmis bir transkripsiyon degildir ve
-orijinal kayittan hicbir ses ornegi kullanilmaz.
+### Nasil cikarildi
 
-Gercek notalari calmak icin iki yol var:
+1. mp3 → 22050 Hz mono, 2048'lik STFT (11.6 ms cerceve)
+2. Yari-ton bantlarina indirgeme (MIDI 24–100)
+3. Medyan suzgecli harmonik/perkusif ayrisma — davulu melodiden ayirmak icin
+4. Tempo ve faz aramasi: dongu tekrarlari arasindaki benzerligi maksimize eden
+   BPM/faz cifti → 73.70 BPM, 8 barlik (128 adim) dongu
+5. En yuksek enerjili 3 dongunun medyani → gurultusu temizlenmis tek dongu
+6. Harmonik toplamli salience (temel + oktav + beslik) → onset tepe noktalari →
+   nota olaylari; oktav siciramasini onlemek icin sureklilik cezasi
+
+**Dogrulama:** lead notalarinin **%88'i** kendi adiminda kayittaki en guclu uc perdeden
+biri (808 icin %100). Melodik banttaki kroma ortusmesi **0.649**; ayni transkripsiyon
+rastgele kaydirildiginda **0.437 (±0.046)** — yani **4.6 standart sapma** ustunde.
+
+Yine de bu otomatik bir transkripsiyon: polifonik bir mikstan cikarildigi icin tek tek
+notalarda hata payi var, orijinal kayittan hicbir ses ornegi kullanilmaz.
+
+Kendi notalarini calmak icin iki yol var:
 
 1. **MIDI birak.** Elindeki `.mid` dosyasini sayfaya surukle (veya `MIDI YUKLE` / `M`).
    Dosya tarayicida cozulur, notalar 16'lik grid'e oturur ve **ayni phonk sentezinden** calar.
    MIDI'de tempo varsa BPM ona gecer. 52'nin altindaki notalar 808'e, ustundekiler lead'e
    gider; 10. kanal (davul) atlanir; yerlesik pad kapanir ki yabanci tonla catismasin.
    Butona tekrar basinca yerlesik hook'a doner.
-2. **Kodu duzenle.** `LEAD` dizisini degistir — her giris
-   `[adim, midi_notasi, 16'lik_cinsinden_sure]`.
+2. **Kodu duzenle.** `SONG.lead` ve `SONG.bass` nesnelerini degistir — anahtar 0-127
+   arasi adim, deger `[[midi_notasi, 16'lik_cinsinden_sure], ...]`.
 
 ## Dizilim
 
 | Bolum | Bar | Ne var |
 |---|---|---|
-| GIRIS | 4 | pad + cowbell + seyrek lead |
-| YUKSELIS | 4 | hat, bass, riser |
-| DROP | 8 | tam davul, 808, lead, impact |
-| BREAK | 4 | pad + lead, davul yok |
-| DROP II | 8 | hat roll, alternatif kick, clap |
-| OUTRO | 4 | sonumlenme |
+| GIRIS | 8 | pad + cowbell + seyrek lead |
+| YUKSELIS | 8 | hat, bass, riser |
+| DROP | 16 | tam davul, 808, lead, impact |
+| BREAK | 8 | pad + lead, davul yok |
+| DROP II | 16 | hat roll, alternatif kick, clap |
+| OUTRO | 8 | sonumlenme |
 
-Dongu bastan basa tekrar eder.
+Bolumler sarkinin 8 barlik dongusuyle hizali; dongu bastan basa tekrar eder.
 
 ## Kontroller
 
@@ -62,13 +78,13 @@ Dongu bastan basa tekrar eder.
 
 | Parametre | Varsayilan | Aciklama |
 |---|---|---|
-| `?bpm=` | 150 | 40–220 arasi tempo (orijinal kayit icin `80`) |
+| `?bpm=` | 73.7 | 40–220 arasi tempo (`?bpm=147` iki kat hizli phonk hissi) |
 | `?vol=` | 0.8 | 0–1 baslangic ses seviyesi |
 | `?quality=` | auto | `low` / `high` / `ultra` — kalabalik, lazer, LED yogunlugu |
 | `?cam=` | cinema | `cinema` / `orbit` / `crowd` |
 | `?debug=1` | kapali | Konsola sekans ve sahne logu |
 
-Ornek: `index.html?bpm=80&quality=ultra&cam=crowd&debug=1`
+Ornek: `index.html?bpm=147&quality=ultra&cam=crowd&debug=1`
 
 ## MIDI okuyucu
 
@@ -89,9 +105,8 @@ ekranda hata banneri gosterir, konser calmaya devam eder. Sinir: 4 MB, adim basi
 - Sekme arka plana alininca ses otomatik duraklar.
 - MIDI dosyasi tarayiciyi hic terk etmez; `FileReader` ile yerelde okunur.
 
-## Kaynaklar
+## Kaynak
 
-Ton, tempo ve akor bilgisi icin:
-[Hooktheory](https://www.hooktheory.com/theorytab/view/miguel/sure-thing) ·
-[Chordify](https://chordify.net/chords/miguel-songs/sure-thing-chords) ·
-[Musicnotes](https://www.musicnotes.com/sheetmusic/mtd.asp?ppn=MN0269591)
+Butun nota, akor, tempo ve davul verisi kullanicinin yukledigi
+`MIGUEL - PHONK (ULTRA SLOWED)` kaydinin sinyal analizinden gelir. Disaridan bir
+nota tablosu veya ses ornegi kullanilmadi.

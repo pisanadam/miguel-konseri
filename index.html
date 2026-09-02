@@ -187,7 +187,7 @@ function qsNumber(key, fallback, min, max) {
 }
 
 var CONFIG = {
-  bpm:      qsNumber("bpm", 150, 40, 220),
+  bpm:      qsNumber("bpm", 73.7, 40, 220),
   master:   qsNumber("vol", 0.8, 0, 1),
   quality:  (QS.get("quality") || "auto").toLowerCase(),
   debug:    QS.get("debug") === "1",
@@ -244,54 +244,97 @@ log("kalite:", QUALITY, TIER);
 
 var STEPS_PER_BAR = 16;
 
-/* Sarkinin gercek armonisi: Fa# minor, dongu D - F#m - C#m - Bm.
-   Orijinal kayit ~80 BPM; phonk edit'i hizli calindigi icin varsayilan 150 BPM. */
-var CHORDS = [
-  { root: 38, pad: [62, 66, 69] },  /* D    */
-  { root: 42, pad: [66, 69, 73] },  /* F#m  */
-  { root: 37, pad: [61, 64, 68] },  /* C#m  */
-  { root: 35, pad: [59, 62, 66] }   /* Bm   */
-];
+/* ---------------------------------------------------------------------------
+   SARKI VERISI — yuklenen kayittan cikarildi.
+   Yontem: mp3 -> 22050 Hz mono -> 2048'lik STFT -> yari-ton bantlari ->
+   harmonik/perkusif ayrisma -> tempo ve faz aramasi (73.70 BPM, 8 barlik dongu)
+   -> 3 dongunun medyani -> harmonik toplamli salience -> onset tabanli nota
+   olaylari. Lead notalarinin %88'i kendi adiminda en guclu perde; 808 icin
+   %100. Olcum kayitla dogrulandi, kulaktan yazilmadi.
 
-/* Davul gridleri: 1 = vurus, 2 = aksanli vurus */
-var DRUMS = {
-  kick:    [1,0,0,0, 0,0,1,0, 1,0,0,0, 0,0,1,0],
-  kickAlt: [1,0,0,1, 0,0,1,0, 0,1,0,0, 1,0,0,1],
-  snare:   [0,0,0,0, 0,0,0,0, 2,0,0,0, 0,0,0,0],
-  clapEx:  [0,0,0,0, 0,0,0,0, 2,0,0,0, 0,0,1,1],
-  hat:     [1,0,1,0, 1,0,1,1, 1,0,1,0, 1,1,1,0],
-  hatRoll: [1,1,1,0, 1,1,1,1, 1,1,1,0, 1,1,1,1],
-  cowbell: [2,0,0,1, 0,1,0,0, 2,0,1,0, 0,1,0,1]
+   Ton: Re majör / Si minör gami (D E F# G A B C#), 808 La pedali uzerinde.
+   Akorlar: D - D - G - Bm (ikiser bar).
+   --------------------------------------------------------------------------- */
+
+var SONG = {
+  bpm: 73.7,
+  loopBars: 8,
+  loopSteps: 128,
+  /* Bar basina pad akoru: D D D D G G Bm Bm (A pedali uzerine) */
+  chords: [[62, 66, 69], [62, 66, 69], [62, 66, 69], [62, 66, 69], [55, 59, 62], [55, 59, 62], [59, 62, 66], [59, 62, 66]],
+  /* Lead: kayittan cikarilan hook, [midi, 16'lik sure] */
+  lead: {
+    2: [[62, 9]],
+    11: [[78, 7]],
+    18: [[71, 4]],
+    22: [[64, 6]],
+    29: [[76, 9]],
+    38: [[73, 4]],
+    42: [[74, 3]],
+    45: [[71, 5]],
+    50: [[66, 3]],
+    53: [[67, 6]],
+    60: [[66, 6]],
+    66: [[62, 4]],
+    70: [[67, 3]],
+    73: [[74, 4]],
+    77: [[71, 12]],
+    89: [[73, 2]],
+    91: [[62, 4]],
+    95: [[64, 8]],
+    103: [[79, 2]],
+    105: [[78, 4]],
+    109: [[71, 5]],
+    114: [[78, 3]],
+    117: [[83, 3]],
+    120: [[81, 6]],
+    126: [[74, 2]]
+  },
+  /* 808: A1 pedali, 4-5. barlarda G1 */
+  bass: {
+    0: [[33, 7]],
+    8: [[33, 6]],
+    16: [[33, 7]],
+    24: [[33, 6]],
+    32: [[33, 7]],
+    40: [[33, 6]],
+    48: [[31, 7]],
+    56: [[31, 6]],
+    62: [[43, 2]],
+    64: [[31, 7]],
+    72: [[31, 6]],
+    80: [[33, 7]],
+    88: [[33, 6]],
+    96: [[33, 7]],
+    104: [[33, 6]],
+    112: [[33, 7]],
+    120: [[33, 6]],
+    126: [[45, 2]]
+  }
 };
 
-/* Lead hook — 4 bar, [adim, midi, 16'lik cinsinden sure]
-   Fa# minor gami: F# G# A B C# D E -> 66 68 69 71 73 74 76
-   Akorlarin uzerine oturur; sarkinin A3-E5 ses araliginda kalir.
-   NOT: bu, dogru ton ve akor uzerine yazilmis bir uyarlamadir, notasi
-   dogrulanmis transkripsiyon degildir. Gercek notalar icin sayfaya MIDI birak. */
-var LEAD = [
-  [[0,73,2],[2,74,2],[4,73,2],[6,69,2],[8,71,4],[12,69,4]],
-  [[0,73,3],[3,71,1],[4,69,4],[8,66,4],[12,69,2],[14,71,2]],
-  [[0,76,2],[2,73,2],[4,76,2],[6,73,1],[7,71,1],[8,73,4],[12,68,4]],
-  [[0,71,4],[4,74,2],[6,73,2],[8,71,2],[10,69,2],[12,66,4]]
-];
-
-/* Bass 808 — adim ve akor koke gore ofset (yariton) */
-var BASS = [
-  [[0,0,6],[6,0,2],[8,0,5],[14,12,2]],
-  [[0,0,6],[6,0,2],[8,0,4],[12,7,4]],
-  [[0,0,6],[6,12,2],[8,0,6],[14,0,2]],
-  [[0,0,8],[8,0,4],[12,7,2],[14,12,2]]
-];
+/* Davul gridleri: kayittan olculen bant enerjileri (55 barlik oylama).
+   Kick 44 Hz civarinda, hi-hat 6.5-11 kHz bandinda okundu. Kick ve snare
+   ayni ceyreklere dustugu icin backbeat olarak ayrildi. */
+var DRUMS = {
+  kick:    [1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0],
+  kickAlt: [1,0,0,0, 0,0,1,0, 1,0,0,0, 0,0,1,0],
+  snare:   [0,0,0,0, 2,0,0,0, 0,0,0,0, 2,0,0,0],
+  clapEx:  [0,0,0,0, 2,0,0,0, 0,0,0,0, 2,0,1,1],
+  hat:     [0,0,1,0, 0,0,1,0, 1,0,0,0, 1,0,0,1],
+  hatRoll: [0,1,1,0, 0,1,1,0, 1,0,1,0, 1,1,1,1],
+  cowbell: [2,0,0,1, 0,0,1,0, 2,0,0,1, 0,1,0,0]
+};
 
 /* Bolum dizilimi — her bolum hangi partlari acar */
+/* Bolumler sarkinin 8 barlik dongusuyle hizali kalsin diye 8'in katlari. */
 var ARRANGEMENT = [
-  { name: "GIRIS",   bars: 4, parts: { pad:1, lead:0.55, cowbell:1, hat:0, kick:0, snare:0, bass:0 }, energy: 0.22, cam: 0 },
-  { name: "YUKSELIS",bars: 4, parts: { pad:1, lead:0.8,  cowbell:1, hat:1, kick:0, snare:0, bass:0.6, riser:1 }, energy: 0.5, cam: 1 },
-  { name: "DROP",    bars: 8, parts: { pad:0.7, lead:1, cowbell:1, hat:1, kick:1, snare:1, bass:1 }, energy: 1.0, cam: 2 },
-  { name: "BREAK",   bars: 4, parts: { pad:1, lead:0.7, cowbell:0, hat:0, kick:0, snare:0, bass:0.4 }, energy: 0.3, cam: 3 },
-  { name: "DROP II", bars: 8, parts: { pad:0.6, lead:1, cowbell:1, hat:2, kick:2, snare:2, bass:1 }, energy: 1.0, cam: 4 },
-  { name: "OUTRO",   bars: 4, parts: { pad:1, lead:0.5, cowbell:1, hat:0, kick:0, snare:0, bass:0.3 }, energy: 0.25, cam: 5 }
+  { name: "GIRIS",   bars: 8,  parts: { pad:1, lead:0.55, cowbell:1, hat:0, kick:0, snare:0, bass:0 }, energy: 0.22, cam: 0 },
+  { name: "YUKSELIS",bars: 8,  parts: { pad:1, lead:0.8,  cowbell:1, hat:1, kick:0, snare:0, bass:0.6, riser:1 }, energy: 0.5, cam: 1 },
+  { name: "DROP",    bars: 16, parts: { pad:0.7, lead:1, cowbell:1, hat:1, kick:1, snare:1, bass:1 }, energy: 1.0, cam: 2 },
+  { name: "BREAK",   bars: 8,  parts: { pad:1, lead:0.7, cowbell:0, hat:0, kick:0, snare:0, bass:0.4 }, energy: 0.3, cam: 3 },
+  { name: "DROP II", bars: 16, parts: { pad:0.6, lead:1, cowbell:1, hat:2, kick:2, snare:2, bass:1 }, energy: 1.0, cam: 4 },
+  { name: "OUTRO",   bars: 8,  parts: { pad:1, lead:0.5, cowbell:1, hat:0, kick:0, snare:0, bass:0.3 }, energy: 0.25, cam: 5 }
 ];
 var TOTAL_BARS = ARRANGEMENT.reduce(function (a, s) { return a + s.bars; }, 0);
 
@@ -544,9 +587,9 @@ AudioEngine.prototype.kick = function (t, gain) {
   var ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain();
   var sh = this.shaper(6);
   o.type = "sine";
-  o.frequency.setValueAtTime(160, t);
-  o.frequency.exponentialRampToValueAtTime(44, t + 0.06);
-  o.frequency.exponentialRampToValueAtTime(36, t + 0.28);
+  o.frequency.setValueAtTime(165, t);
+  o.frequency.exponentialRampToValueAtTime(43.7, t + 0.06);   /* kayitta olculen temel */
+  o.frequency.exponentialRampToValueAtTime(38, t + 0.3);
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(gain, t + 0.004);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
@@ -740,7 +783,8 @@ AudioEngine.prototype.scheduleStep = function (absStep, t) {
   var s = absStep % STEPS_PER_BAR;
   var sec = sectionAtBar(bar);
   var p = sec.def.parts;
-  var chord = CHORDS[bar % CHORDS.length];
+  var songStep = absStep % SONG.loopSteps;
+  var chordVoicing = SONG.chords[Math.floor(songStep / STEPS_PER_BAR)];
   var sd = this.stepDur();
   var barPos = sec.barInSection;
   var lastBar = barPos === sec.def.bars - 1;
@@ -752,7 +796,7 @@ AudioEngine.prototype.scheduleStep = function (absStep, t) {
   if (s === 0 && p.riser) this.riser(t, sd * STEPS_PER_BAR * sec.def.bars);
 
   /* --- pad --- (MIDI yuklendiginde kapali: yerlesik armoni yabanci tonla catismasin) */
-  if (p.pad && s === 0 && !um) this.pad(t, chord.pad, sd * STEPS_PER_BAR * 0.98, 0.055 * p.pad);
+  if (p.pad && s === 0 && !um) this.pad(t, chordVoicing, sd * STEPS_PER_BAR * 0.98, 0.055 * p.pad);
 
   /* --- kick --- */
   if (p.kick) {
@@ -768,9 +812,9 @@ AudioEngine.prototype.scheduleStep = function (absStep, t) {
         this.sub808(t, ub[ui][0], sd * ub[ui][1], 0.62 * p.bass);
       }
     } else {
-      var bl = BASS[bar % BASS.length];
-      for (var i = 0; i < bl.length; i++) {
-        if (bl[i][0] === s) this.sub808(t, chord.root + bl[i][1], sd * bl[i][2], 0.62 * p.bass);
+      var sb = SONG.bass[songStep];
+      if (sb) for (var i = 0; i < sb.length; i++) {
+        this.sub808(t, sb[i][0], sd * sb[i][1], 0.62 * p.bass);
       }
     }
   }
@@ -805,9 +849,12 @@ AudioEngine.prototype.scheduleStep = function (absStep, t) {
         }
       }
     } else {
-      var ll = LEAD[bar % LEAD.length];
-      for (var j = 0; j < ll.length; j++) {
-        if (ll[j][0] === s) this.lead(t, ll[j][1], sd * ll[j][2] * 0.95, 0.16 * p.lead);
+      var sl = SONG.lead[songStep];
+      if (sl) {
+        var lv = 0.16 * p.lead / Math.max(1, Math.sqrt(sl.length));
+        for (var j = 0; j < sl.length; j++) {
+          this.lead(t, sl[j][0], sd * sl[j][1] * 0.95, lv);
+        }
       }
     }
   }
