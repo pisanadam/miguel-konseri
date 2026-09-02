@@ -15,21 +15,65 @@ Tarayicida calisan tek dosyalik 3D konser. Iki ses kaynagi vardir:
 `S` tusu ikisi arasinda gecis yapar. `index.html` tek basina sentez modunda acilir;
 sarkilarla acilan surum icin asagidaki paketlemeyi kullan.
 
+## GitHub Pages'te yayinlamak
+
+Depo Pages icin hazir: `.github/workflows/pages.yml` her push'ta siteyi yayinlar.
+Bir kez ayar gerekir — **Settings → Pages → Source: GitHub Actions**.
+
+Parcalari siteye eklemek:
+
+```bash
+mkdir -p tracks
+cp ~/muzik/*.mp3 tracks/
+python3 bundle.py -a tracks/*.mp3 --manifest     # tracks.json uretir
+git add tracks tracks.json && git commit -m "parcalar" && git push
+```
+
+Sayfa acilinca `tracks.json` okunur ve parcalar **akis halinde** calar: ne base64
+cozulur ne de dosya bellege kopyalanir. `tracks.json` yoksa site sentez moduyla acilir,
+hata vermez. Is akisi yayindan once manifesti dogrular: listede olmayan bir dosya varsa
+dagitim durur.
+
+`tracks.example.json` bicimi gosterir. Herkese acik bir siteye muzik koymanin
+telif sorumlulugu senindir — bu yuzden depoya hicbir ses dosyasi eklemedim.
+
+## Ziyaretcilerin yukledigi muzikler
+
+Sayfaya mp3 birakan biri icin parca **o cihazda kalir**: dosya IndexedDB'ye yazilir,
+sayfa yenilendiginde listeye geri gelir, `SIL` butonuyla kaldirilir. Depo siniri 200 MB.
+
+> Bu **cihaz basina** kaliciliktir. GitHub Pages statik bir sunucudur, sunucu tarafi
+> depolama yoktur — yani bir ziyaretcinin yukledigi parcayi baska ziyaretciler duymaz.
+> Herkesin duyacagi ortak bir liste icin bir depolama servisi (ornegin S3, Supabase,
+> Cloudflare R2) ve kucuk bir yukleme ucu gerekir; Pages bunu tek basina yapamaz.
+
+## Mobil
+
+- Kontroller dokunma icin buyutulur (en az 42 px), dar ekranda yazilar kisalir,
+  centik/ev cubugu icin `env(safe-area-inset-*)` payi birakilir.
+- Parmakla surukle: kamera. Cift dokun: duraklat. Alttaki `◀ ▶`: parca.
+- Mobilde ses `<audio>` uzerinden calar. Iki nedeni var: iOS'ta zil/sessiz anahtari
+  Web Audio'yu susturur ama medya kanalini susturmaz; ayrica parca basina ~60 MB'lik
+  PCM tamponu acilmaz, dosya akis halinde cozulur. Analiz yine `AnalyserNode` ile
+  yapilir, gorseller ayni sekilde surulur.
+- iOS ses kilidi jestin **icinde** acilir (`resume()` senkron cagrilir), yoksa Safari
+  reddeder.
+- Kare hizi 26'nin altina duserse sahne kademeli hafifler: once piksel orani, sonra
+  kalabalik detayi ve sis, sonra lazerler. Konser yavaslamak yerine sadelesir.
+- Calarken ekran sonmesin diye Wake Lock istenir; desteklenmiyorsa sessizce gecilir.
+
 ## Paketleme — tek dosya, cevrimdisi
 
 `bundle.py`, sayfayi ve ses dosyalarini tek bir HTML'e gomer. Cikti cift tiklamayla
 (`file://`) acilir; internet, sunucu ve kurulum istemez.
 
 ```bash
-python3 bundle.py \
-  -a "1 - birinci.mp3" \
-  -a "2 - ikinci.mp3" \
-  -a "3 - ucuncu.mp3" \
-  --three three.min.js \
-  -o konser.html
+python3 bundle.py -a tracks/*.mp3 --three three.min.js -o konser.html
 ```
 
-- `-a` sirayla tekrarlanir; sira calma listesi sirasidir.
+- `-a` tekrarlanabilir ve her seferinde birden fazla dosya alir; sira calma listesi
+  sirasidir.
+- `--manifest` verilirse paketleme yapilmaz, sadece `tracks.json` uretilir.
 - Parca adi dosya adindan alinir (bastaki numara ve alt cizgiler temizlenir).
 - `--three` ile [three.js r128](https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js)
   de gomulur; olmazsa sayfa acilirken internet gerekir.
@@ -106,6 +150,7 @@ Bolumler sarkinin 8 barlik dongusuyle hizali; dongu bastan basa tekrar eder.
 | `P` / `←` | Onceki parca |
 | `M` | Dosya yukle (.mp3 / .wav / .mid) |
 | `S` | Kaynak: KAYIT ↔ SENTEZ |
+| Cift dokunma | Oynat/duraklat (dokunmatik) |
 | `H` | HUD ac/kapa |
 | `F` | Tam ekran |
 | Surukle | Serbest kamerada bakis (surukleyince otomatik gecer) |

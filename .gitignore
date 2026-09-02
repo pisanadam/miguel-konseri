@@ -1,11 +1,13 @@
-# Ses dosyalari depoya girmez: sayfanin yanina koydugun song.mp3 senin kopyandir,
-# repoya eklenmesi onu yayinlamak olur.
-*.mp3
-*.wav
-*.m4a
-*.ogg
-*.flac
-song.*
-
-# paketlenmis tek dosya cikti (ses gomulu)
+# Paketlenmis tek dosya cikti (ses gomulu) — depoya girmez.
 konser.html
+
+# Sayfanin yanina konan tek parca.
+/song.mp3
+/song.wav
+/song.m4a
+/song.ogg
+/song.flac
+
+# NOT: tracks/ klasoru ve tracks.json bilerek yok sayilmaz — GitHub Pages'te
+# sitenin calmasi icin onlarin depoda olmasi gerekir. Oraya ne koyacagina sen
+# karar ver: herkese acik bir siteye muzik koymak onu yayinlamak demektir.

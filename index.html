@@ -18,7 +18,8 @@
   html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--fg);
     font-family:"Bahnschrift","DIN Alternate","Segoe UI",system-ui,-apple-system,sans-serif;
     overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;}
-  #stage-canvas{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;}
+  #stage-canvas{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;
+    touch-action:none;}
 
   /* --- film katmanlari --- */
   #vignette{position:fixed;inset:0;z-index:2;pointer-events:none;
@@ -52,8 +53,10 @@
   .meter-bar{width:4px;background:linear-gradient(to top,var(--neon3),var(--neon2));
     height:2px;border-radius:2px;transition:height .045s linear;box-shadow:0 0 8px var(--neon2);}
 
-  #controls{position:fixed;z-index:7;right:18px;bottom:18px;display:flex;gap:8px;align-items:center;
-    flex-wrap:wrap;justify-content:flex-end;max-width:min(92vw,560px);}
+  #controls{position:fixed;z-index:7;display:flex;gap:8px;align-items:center;
+    flex-wrap:wrap;justify-content:flex-end;max-width:min(92vw,560px);
+    right:calc(18px + env(safe-area-inset-right));
+    bottom:calc(18px + env(safe-area-inset-bottom));}
   button.ctl{pointer-events:auto;cursor:pointer;font:inherit;font-size:10px;letter-spacing:.16em;
     text-transform:uppercase;color:var(--fg);background:rgba(10,4,22,.55);
     border:1px solid rgba(34,224,255,.3);padding:9px 12px;border-radius:3px;
@@ -87,6 +90,10 @@
   #enter:hover{transform:scale(1.045);box-shadow:0 0 60px rgba(255,45,155,.8);}
   #enter:disabled{opacity:.45;cursor:progress;transform:none;}
   #keys{color:var(--dim);font-size:10px;letter-spacing:.2em;text-transform:uppercase;}
+  body.touch .only-keys{display:none;}
+  #touch-hint{display:none;color:var(--dim);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;line-height:2;}
+  body.touch #touch-hint{display:block;}
   #keys kbd{border:1px solid rgba(139,132,173,.45);border-radius:3px;padding:2px 6px;margin:0 2px;
     font-family:inherit;font-size:10px;color:var(--fg);}
 
@@ -105,13 +112,36 @@
   #err.show{display:block;}
   #err code{color:#ff9db0;word-break:break-word;}
 
-  @media (max-width:640px){
-    #hud{font-size:10px;padding:10px 12px;}
-    #hud-left .title{font-size:12px;letter-spacing:.3em;}
-    #controls{right:10px;bottom:10px;gap:6px;}
-    button.ctl{padding:8px 9px;font-size:9px;}
-    #meters{left:10px;bottom:64px;height:32px;}
-    #vol{width:80px;}
+  /* --- dokunmatik: parmak icin buyuk hedefler --- */
+  body.touch button.ctl{min-height:44px;min-width:44px;padding:11px 14px;font-size:10px;}
+  body.touch #enter{padding:20px 46px;}
+
+  @media (max-width:820px){
+    #hud{font-size:10px;padding:calc(8px + env(safe-area-inset-top)) 12px 10px;gap:8px;}
+    #hud-left .title{font-size:12px;letter-spacing:.26em;}
+    #hud-left .sub{display:none;}
+    #hud-right{line-height:1.6;}
+    #controls{gap:6px;max-width:96vw;justify-content:center;
+      left:calc(8px + env(safe-area-inset-left));
+      right:calc(8px + env(safe-area-inset-right));
+      bottom:calc(8px + env(safe-area-inset-bottom));}
+    #meters{left:10px;bottom:auto;top:calc(74px + env(safe-area-inset-top));height:26px;}
+    #vol{width:92px;}
+    #btn-track{max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    #track-tag{display:inline-block;max-width:52vw;overflow:hidden;text-overflow:ellipsis;
+      white-space:nowrap;vertical-align:bottom;}
+    #hud-right{max-width:62vw;}
+    body.touch button.ctl{min-height:42px;padding:10px 11px;}
+    #btn-prev,#btn-next,#btn-play,#btn-full{flex:0 0 auto;}
+    #vol{order:99;width:110px;}
+  }
+  @media (max-width:560px){
+    #hud-right div:nth-child(2),#hud-right div:nth-child(3){display:none;}
+    #scanlines{display:none;}
+  }
+  @media (max-height:430px) and (orientation:landscape){
+    #hud{padding-top:6px;}
+    #meters{display:none;}
   }
   @media (prefers-reduced-motion:reduce){
     #grain{animation:none;} #gate h1{animation:none;}
@@ -146,6 +176,7 @@
   <button class="ctl" id="btn-prev" title="P — onceki parca" hidden>&#9664;</button>
   <button class="ctl" id="btn-track" title="N — sonraki parca" hidden>PARCA</button>
   <button class="ctl" id="btn-next" title="N — sonraki parca" hidden>&#9654;</button>
+  <button class="ctl" id="btn-del" title="Bu yuklemeyi bu cihazdan sil" hidden>SIL</button>
   <button class="ctl" id="btn-midi" title="M — sarkiyi (mp3) veya notalari (mid) yukle">DOSYA YUKLE</button>
   <input type="file" id="midi-file" accept=".mid,.midi,.mp3,.wav,.ogg,.m4a,.flac,audio/*" hidden />
   <button class="ctl" id="btn-src" title="S — kaynak: kayit / sentez" hidden>KAYNAK: SENTEZ</button>
@@ -163,13 +194,18 @@
      Isik, lazer ve kalabalik canli spektrumla surulur. Kendi mp3'unu sayfaya
      birakirsan listeye eklenir; <b>.mid</b> birakirsan notalar sentezle calar.</p>
   <button id="enter" type="button">KONSERI BASLAT</button>
-  <div id="keys">
+  <div id="keys" class="only-keys">
     <kbd>Bosluk</kbd> oynat/durdur &nbsp; <kbd>N</kbd>/<kbd>P</kbd> parca &nbsp; <kbd>C</kbd> kamera &nbsp;
     <kbd>S</kbd> kaynak &nbsp; <kbd>H</kbd> hud &nbsp; <kbd>F</kbd> tam ekran &nbsp; <kbd>surukle</kbd> bak
   </div>
 </div>
 
 <div id="drop"><div>DOSYAYI BIRAK<small>.mp3 / .wav &rarr; sarkinin kendisi calar &nbsp;&middot;&nbsp; .mid &rarr; notalar bu sentezle calinir</small></div></div>
+
+<div id="touch-hint">
+  Parmakla surukle: bak &nbsp;&middot;&nbsp; cift dokun: duraklat<br />
+  Alttaki &#9664; &#9654; ile parca degistir
+</div>
 
 <div id="err" role="alert"></div>
 
@@ -227,12 +263,69 @@ function decodeB64Element(el) {
   return buf.buffer;
 }
 
+/* ---------------------------------------------------------------- yerel depo
+   Ziyaretcinin yukledigi parcalar IndexedDB'de saklanir; sayfa yenilenince geri
+   gelirler. Depo tarayiciya ozeldir — GitHub Pages gibi statik bir sitede sunucu
+   yoktur, dolayisiyla yuklemeler o cihazda kalir, baskalarina gitmez. */
+var DB_NAME = "phonk-konser";
+var DB_STORE = "tracks";
+var DB_VERSION = 1;
+var MAX_STORE_MB = 200;
+
+function openDb() {
+  return new Promise(function (resolve, reject) {
+    if (!window.indexedDB) { reject(new Error("Bu tarayicida IndexedDB yok.")); return; }
+    var rq;
+    try { rq = indexedDB.open(DB_NAME, DB_VERSION); }
+    catch (e) { reject(e); return; }
+    rq.onupgradeneeded = function () {
+      var db = rq.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) {
+        db.createObjectStore(DB_STORE, { keyPath: "id", autoIncrement: true });
+      }
+    };
+    rq.onsuccess = function () { resolve(rq.result); };
+    rq.onerror = function () { reject(rq.error || new Error("IndexedDB acilamadi.")); };
+    rq.onblocked = function () { reject(new Error("IndexedDB baska sekmede kilitli.")); };
+  });
+}
+
+function dbTx(mode, fn) {
+  return openDb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(DB_STORE, mode);
+      var store = tx.objectStore(DB_STORE);
+      var out;
+      try { out = fn(store); } catch (e) { reject(e); return; }
+      tx.oncomplete = function () { db.close(); resolve(out && out.result !== undefined ? out.result : out); };
+      tx.onerror = function () { db.close(); reject(tx.error || new Error("Depo islemi basarisiz.")); };
+      tx.onabort = function () { db.close(); reject(tx.error || new Error("Depo islemi iptal edildi.")); };
+    });
+  });
+}
+
+function dbList()          { return dbTx("readonly", function (st) { return st.getAll(); }); }
+function dbAdd(rec)        { return dbTx("readwrite", function (st) { return st.add(rec); }); }
+function dbDelete(id)      { return dbTx("readwrite", function (st) { return st.delete(id); }); }
+
 /* ---------------------------------------------------------------- log / hata */
 var REDUCED_MOTION = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+var UA = navigator.userAgent || "";
+var IS_IOS = /iPad|iPhone|iPod/.test(UA) ||
+             (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+var IS_MOBILE = IS_IOS || /Android|Mobile|Silk|Kindle|BlackBerry|Opera Mini/i.test(UA) ||
+                (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 820);
+var HAS_TOUCH = "ontouchstart" in window || navigator.maxTouchPoints > 0;
 
 var LOG_PREFIX = "[phonk]";
 function log()  { if (CONFIG.debug) console.log.apply(console, [LOG_PREFIX].concat([].slice.call(arguments))); }
 function warn() { console.warn.apply(console, [LOG_PREFIX].concat([].slice.call(arguments))); }
+function clearError() {
+  var box = document.getElementById("err");
+  if (box) box.classList.remove("show");
+}
+
 function fail(scope, e) {
   console.error(LOG_PREFIX, scope, e);
   var box = document.getElementById("err");
@@ -253,10 +346,9 @@ function midiToHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 /* Cihaz gucune gore kalite secimi. */
 function detectQuality() {
   if (CONFIG.quality === "low" || CONFIG.quality === "high" || CONFIG.quality === "ultra") return CONFIG.quality;
-  var mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
   var mem = navigator.deviceMemory || 4;
   var cores = navigator.hardwareConcurrency || 4;
-  if (mobile || mem <= 2 || cores <= 2) return "low";
+  if (IS_MOBILE || mem <= 2 || cores <= 2) return "low";
   if (mem >= 8 && cores >= 8) return "ultra";
   return "high";
 }
@@ -531,7 +623,13 @@ function AudioEngine() {
   this.fileSource = null;
   this.fileStart = 0;       /* ctx zamani */
   this.fileOffset = 0;      /* duraklatilan konum */
-  this.playlist = [];       /* [{el, name, buffer}] */
+  /* Mobilde ses <audio> uzerinden calar: iOS'ta zil/sessiz anahtari Web Audio'yu
+     susturur ama medya kanalini susturmaz, ustelik parca basina ~60 MB'lik PCM
+     tamponu acilmaz — dosya akis halinde cozulur. */
+  this.useMedia = IS_MOBILE;
+  this.media = null;        /* {el, node, url} */
+  this.songDuration = 0;
+  this.playlist = [];       /* [{el, name, buffer, blobUrl}] */
   this.trackIndex = -1;
   this.manualStop = false;  /* onended'in otomatik gecisi tetiklememesi icin */
   this.onTrackChange = null;
@@ -578,6 +676,55 @@ AudioEngine.prototype.init = function () {
   this.noiseBuf = this.makeNoise(2);
   this.ready = true;
   log("audio hazir, samplerate", ctx.sampleRate);
+};
+
+/* <audio> elemanini ve tek seferlik MediaElementSource'u hazirlar. */
+AudioEngine.prototype.ensureMedia = function () {
+  if (this.media) return this.media;
+  var el = document.createElement("audio");
+  el.setAttribute("playsinline", "");
+  el.setAttribute("webkit-playsinline", "");
+  el.preload = "auto";
+  el.crossOrigin = "anonymous";
+  el.loop = false;
+  el.style.display = "none";
+  document.body.appendChild(el);
+
+  var self = this;
+  el.addEventListener("ended", function () {
+    if (!self.playing) return;
+    if (self.playlist.length < 2) { el.currentTime = 0; el.play()["catch"](function () {}); return; }
+    self.changeTrack(1)["catch"](function (e) { fail("Sonraki parcaya gecilemedi", e); });
+  });
+  el.addEventListener("error", function () {
+    var err = el.error;
+    fail("Ses calinamadi", new Error("media error kodu " + (err ? err.code : "?")));
+  });
+
+  /* Bir eleman icin MediaElementSource yalnizca bir kez olusturulabilir. */
+  var node = this.ctx.createMediaElementSource(el);
+  node.connect(this.nodes.comp);
+  this.media = { el: el, node: node, url: null };
+  log("medya yolu hazir (mobil)");
+  return this.media;
+};
+
+/* iOS: ses ancak dokunma icinde baslatilabilir. Sessiz bir tampon calarak
+   baglami acar; bu cagri jest isleyicisinin icinden, senkron yapilmalidir. */
+AudioEngine.prototype.unlock = function () {
+  if (!this.ready) return;
+  try {
+    this.ctx.resume();
+    var b = this.ctx.createBuffer(1, 1, 22050);
+    var s = this.ctx.createBufferSource();
+    s.buffer = b; s.connect(this.ctx.destination); s.start(0);
+    if (this.useMedia) {
+      var m = this.ensureMedia();
+      /* bos bir oynatma denemesi de medya kanalini acar */
+      m.el.play()["catch"](function () { /* kaynak yok, beklenen */ });
+      m.el.pause();
+    }
+  } catch (e) { warn("ses kilidi acilamadi:", e.message); }
 };
 
 AudioEngine.prototype.makeNoise = function (sec) {
@@ -969,13 +1116,22 @@ AudioEngine.prototype.stop = function () {
 };
 
 /* Ses dosyasini cozer. Basarirsa mod "file"a gecer. */
-AudioEngine.prototype.loadAudio = function (arrayBuffer, name) {
+AudioEngine.prototype.loadAudio = function (arrayBuffer, name, mime) {
   if (!this.ready) this.init();
   var self = this;
+
+  if (this.useMedia) {
+    return this.setMediaSrc(
+      { url: URL.createObjectURL(new Blob([arrayBuffer], { type: mime || "audio/mpeg" })), temp: true },
+      name
+    );
+  }
+
   return new Promise(function (resolve, reject) {
     var ok = function (buf) {
       if (!buf || !buf.duration) { reject(new Error("Ses cozulemedi (bos tampon).")); return; }
       self.songBuffer = buf;
+      self.songDuration = buf.duration;
       self.songName = name || "kayit";
       resolve(buf);
     };
@@ -994,6 +1150,30 @@ AudioEngine.prototype.setPlaylist = function (list) {
 
 /* Parcayi cozer ve etkin hale getirir. Ayni anda en fazla 2 cozulmus tampon
    tutulur; digerleri birakilir (bir parca ~60 MB PCM eder). */
+/* Parcanin ham baytlari — dort kaynak: gomulu base64, url, saklanmis blob, bellek. */
+function trackBytes(track) {
+  if (track.data) return Promise.resolve(track.data);
+  if (track.blob) return track.blob.arrayBuffer();
+  if (track.el) { try { return Promise.resolve(decodeB64Element(track.el)); } catch (e) { return Promise.reject(e); } }
+  if (track.url) {
+    return fetch(track.url).then(function (r) {
+      if (!r.ok) throw new Error(track.url + " alinamadi (" + r.status + ")");
+      return r.arrayBuffer();
+    });
+  }
+  return Promise.reject(new Error("Parcanin kaynagi yok: " + track.name));
+}
+
+/* Medya yolu icin calinabilir bir adres. Url varsa dosya akis halinde calar:
+   ne base64 cozulur ne de bellege kopyalanir. */
+function trackSrc(track) {
+  if (track.url) return Promise.resolve({ url: track.url, temp: false });
+  if (track.blob) return Promise.resolve({ url: URL.createObjectURL(track.blob), temp: true });
+  return trackBytes(track).then(function (buf) {
+    return { url: URL.createObjectURL(new Blob([buf], { type: track.mime || "audio/mpeg" })), temp: true };
+  });
+}
+
 AudioEngine.prototype.loadTrack = function (i) {
   var self = this;
   var n = this.playlist.length;
@@ -1001,9 +1181,14 @@ AudioEngine.prototype.loadTrack = function (i) {
   var idx = ((i % n) + n) % n;
   var track = this.playlist[idx];
 
-  var ready = track.buffer
+  /* Medya yolunda cozulmus tampon tutulmaz: her parca akis halinde acilir. */
+  var ready = this.useMedia
+    ? trackSrc(track).then(function (src) { return self.setMediaSrc(src, track.name); })
+    : (track.buffer
     ? Promise.resolve(track.buffer)
-    : this.loadAudio(decodeB64Element(track.el), track.name).then(function (buf) {
+    : trackBytes(track).then(function (bytes) {
+        return self.loadAudio(bytes, track.name, track.mime);
+      }).then(function (buf) {
         track.buffer = buf;
         var spare = 0;
         for (var k = self.playlist.length - 1; k >= 0; k--) {
@@ -1013,17 +1198,17 @@ AudioEngine.prototype.loadTrack = function (i) {
           if (++spare > 1) t.buffer = null;      /* en fazla 1 yedek tampon tut */
         }
         return buf;
-      });
+      }));
 
   return ready.then(function (buf) {
-    self.songBuffer = buf;
+    if (!self.useMedia) { self.songBuffer = buf; self.songDuration = buf.duration; }
     self.songName = track.name;
     self.trackIndex = idx;
     /* Yeni parcanin seviyesi farklidir: uyarlamali esikler onceki parcadan
        devraldigi taban cizgisiyle calisirsa hicbir vurus tetiklenmez. */
     if (APP.stage) APP.stage.live = null;
-    if (self.onTrackChange) self.onTrackChange(idx, track.name, buf.duration);
-    log("parca", (idx + 1) + "/" + n, track.name, buf.duration.toFixed(1) + " s");
+    if (self.onTrackChange) self.onTrackChange(idx, track.name, self.songDuration);
+    log("parca", (idx + 1) + "/" + n, track.name, self.songDuration.toFixed(1) + " s");
     return buf;
   });
 };
@@ -1039,7 +1224,51 @@ AudioEngine.prototype.changeTrack = function (delta) {
   });
 };
 
+/* Medya elemanina yeni bir kaynak baglar, metadata gelene kadar bekler.
+   Onceki gecici blob adresi burada birakilir. */
+AudioEngine.prototype.setMediaSrc = function (src, name) {
+  var self = this;
+  if (!this.ready) this.init();
+  return new Promise(function (resolve, reject) {
+    var m = self.ensureMedia(), el = m.el, done = false;
+    var cleanup = function () {
+      el.removeEventListener("loadedmetadata", onMeta);
+      el.removeEventListener("error", onErr);
+      clearTimeout(timer);
+    };
+    var onMeta = function () {
+      if (done) return; done = true; cleanup();
+      if (m.tempUrl && m.tempUrl !== src.url) URL.revokeObjectURL(m.tempUrl);
+      m.url = src.url;
+      m.tempUrl = src.temp ? src.url : null;
+      self.songDuration = isFinite(el.duration) ? el.duration : 0;
+      self.songBuffer = null;
+      resolve({ duration: self.songDuration, media: true });
+    };
+    var onErr = function () {
+      if (done) return; done = true; cleanup();
+      if (src.temp) URL.revokeObjectURL(src.url);
+      reject(new Error((name || "Dosya") + " bu tarayicida acilamadi."));
+    };
+    var timer = setTimeout(onErr, 25000);
+    el.addEventListener("loadedmetadata", onMeta);
+    el.addEventListener("error", onErr);
+    el.src = src.url;
+    el.load();
+  });
+};
+
 AudioEngine.prototype.startFile = function (offset) {
+  if (this.useMedia) {
+    var m = this.media;
+    if (!m || !m.url) throw new Error("Yuklenmis ses dosyasi yok.");
+    m.el.loop = this.playlist.length < 2;
+    try { m.el.currentTime = offset || 0; } catch (e) { /* metadata henuz yok */ }
+    this.fileOffset = offset || 0;
+    var p = m.el.play();
+    if (p && p["catch"]) p["catch"](function (e) { warn("oynatma reddedildi:", e.message); });
+    return;
+  }
   if (!this.songBuffer) throw new Error("Yuklenmis ses dosyasi yok.");
   this.stopFile();
   var self = this;
@@ -1061,6 +1290,10 @@ AudioEngine.prototype.startFile = function (offset) {
 };
 
 AudioEngine.prototype.stopFile = function () {
+  if (this.useMedia) {
+    if (this.media && this.media.el) this.media.el.pause();
+    return;
+  }
   if (this.fileSource) {
     this.manualStop = true;
     try { this.fileSource.stop(); } catch (e) { /* zaten durmus */ }
@@ -1072,15 +1305,17 @@ AudioEngine.prototype.stopFile = function () {
 };
 
 AudioEngine.prototype.filePosition = function () {
-  if (!this.songBuffer) return 0;
+  if (this.useMedia) return this.media && this.media.el ? this.media.el.currentTime : 0;
+  if (!this.songBuffer || !this.songDuration) return 0;
   if (!this.playing) return this.fileOffset;
-  return (this.ctx.currentTime - this.fileStart) % this.songBuffer.duration;
+  return (this.ctx.currentTime - this.fileStart) % this.songDuration;
 };
 
 /* Mod degisimi: sentez <-> kayit */
 AudioEngine.prototype.setMode = function (mode) {
   if (mode === this.mode) return;
-  if (mode === "file" && !this.songBuffer) throw new Error("Once bir ses dosyasi yukle.");
+  var haveAudio = this.useMedia ? !!(this.media && this.media.url) : !!this.songBuffer;
+  if (mode === "file" && !haveAudio) throw new Error("Once bir ses dosyasi yukle.");
   this.mode = mode;
   if (mode === "synth") { this.stopFile(); }
   else if (this.playing) { this.startFile(0); }
@@ -1587,6 +1822,7 @@ Stage.prototype.bindInput = function () {
 
   function down(e) {
     self.orbit.dragging = true;
+    self.orbit.moved = false;
     var p = e.touches ? e.touches[0] : e;
     self.orbit.lx = p.clientX; self.orbit.ly = p.clientY;
     if (self.camMode !== "orbit") { self.camMode = "orbit"; UI.syncCam(); }
@@ -1595,6 +1831,7 @@ Stage.prototype.bindInput = function () {
     if (!self.orbit.dragging) return;
     var p = e.touches ? e.touches[0] : e;
     var dx = p.clientX - self.orbit.lx, dy = p.clientY - self.orbit.ly;
+    if (Math.abs(dx) + Math.abs(dy) > 6) self.orbit.moved = true;
     self.orbit.lx = p.clientX; self.orbit.ly = p.clientY;
     self.orbit.targetTheta -= dx * 0.005;
     self.orbit.targetPhi = clamp(self.orbit.targetPhi - dy * 0.004, 0.18, 1.48);
@@ -1605,6 +1842,17 @@ Stage.prototype.bindInput = function () {
   el.addEventListener("mousedown", down);
   window.addEventListener("mousemove", move);
   window.addEventListener("mouseup", up);
+  var lastTap = 0;
+  el.addEventListener("touchend", function (e) {
+    var now = Date.now();
+    if (now - lastTap < 320 && !self.orbit.moved) {
+      lastTap = 0;
+      if (APP.engine.ready) togglePlay();
+      if (e.cancelable) e.preventDefault();
+    } else {
+      lastTap = now;
+    }
+  });
   el.addEventListener("touchstart", down, { passive: true });
   el.addEventListener("touchmove", move, { passive: false });
   window.addEventListener("touchend", up);
@@ -1613,11 +1861,43 @@ Stage.prototype.bindInput = function () {
     if (e.cancelable) e.preventDefault();
   }, { passive: false });
 
-  window.addEventListener("resize", function () { self.resize(); });
+  window.addEventListener("resize", function () {
+    self.resize();
+    if (typeof applyCompactLabels === "function") applyCompactLabels();
+  });
   el.addEventListener("webglcontextlost", function (e) {
     e.preventDefault();
     fail("WebGL baglami kayboldu", new Error("Sayfayi yenileyin."));
   });
+};
+
+/* Kare hizi dususe gecerse sahneyi kademeli hafifletir — telefonlarda konser
+   yavaslamak yerine sadelesir. */
+Stage.prototype.checkPerf = function (dt) {
+  if (!this.perf) this.perf = { acc: 0, frames: 0, level: 0, grace: 4 };
+  var P = this.perf;
+  if (P.grace > 0) { P.grace -= dt; return; }
+  P.acc += dt; P.frames++;
+  if (P.acc < 3) return;
+  var fps = P.frames / P.acc;
+  P.acc = 0; P.frames = 0;
+  if (fps >= 26 || P.level >= 3) return;
+
+  P.level++;
+  P.grace = 4;
+  if (P.level === 1) {
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
+    this.renderer.setSize(window.innerWidth, window.innerHeight, false);
+  } else if (P.level === 2) {
+    if (this.phones) this.phones.visible = false;
+    if (this.crowdHeads) this.crowdHeads.visible = false;
+    for (var i = 0; i < this.haze.length; i++) this.haze[i].sprite.visible = false;
+  } else {
+    for (var j = 0; j < this.lasers.length; j++) this.lasers[j].mesh.visible = false;
+    for (var k = 0; k < this.spots.length; k++) this.spots[k].cone.visible = false;
+    if (this.sparks) this.sparks.visible = false;
+  }
+  warn("kare hizi " + fps.toFixed(0) + " — kalite kademesi " + P.level + "e dusuruldu");
 };
 
 Stage.prototype.resize = function () {
@@ -1945,6 +2225,7 @@ Stage.prototype.update = function (dt, engine) {
 
   /* --- kamera --- */
   this.updateCamera(dt, t);
+  this.checkPerf(dt);
   this.renderer.render(this.scene, this.camera);
 };
 
@@ -2000,7 +2281,7 @@ var UI = {
 
   init: function () {
     var ids = ["gate", "enter", "btn-play", "btn-cam", "btn-hud", "btn-full", "btn-midi", "btn-src",
-               "btn-prev", "btn-track", "btn-next", "track-line", "track-tag",
+               "btn-prev", "btn-track", "btn-next", "btn-del", "track-line", "track-tag",
                "midi-file", "drop", "vol", "section-tag", "bpm-tag", "bar-tag", "cam-tag", "fps-tag",
                "hud", "meters", "strobe"];
     for (var i = 0; i < ids.length; i++) this.els[ids[i]] = document.getElementById(ids[i]);
@@ -2021,9 +2302,10 @@ var UI = {
   },
 
   syncCam: function () {
-    var label = { cinema: "SINEMA", orbit: "SERBEST", crowd: "KALABALIK" }[APP.stage.camMode];
-    this.els["btn-cam"].textContent = "KAMERA: " + label;
-    this.els["cam-tag"].textContent = label;
+    var full = { cinema: "SINEMA", orbit: "SERBEST", crowd: "KALABALIK" }[APP.stage.camMode];
+    var abbr = { cinema: "SIN", orbit: "SER", crowd: "KAL" }[APP.stage.camMode];
+    this.els["btn-cam"].textContent = SHORT_UI ? "KAM: " + abbr : "KAMERA: " + full;
+    this.els["cam-tag"].textContent = full;
   },
 
   strobe: function (opacity, ms) {
@@ -2053,7 +2335,9 @@ var UI = {
 function applyMelody(mel, label) {
   APP.engine.setMelody(mel);
   APP.melodyName = label || null;
-  UI.els["btn-midi"].textContent = label ? "MIDI: " + label + "  X" : "MIDI YUKLE";
+  UI.els["btn-midi"].textContent = label
+    ? (SHORT_UI ? "MIDI \u00D7" : "MIDI: " + label + "  X")
+    : lbl("DOSYA YUKLE", "+ MP3");
   UI.els["btn-midi"].setAttribute("aria-pressed", label ? "true" : "false");
   UI.els["bpm-tag"].textContent = Math.round(CONFIG.bpm);
 }
@@ -2069,6 +2353,27 @@ function syncTrackUI() {
   var short = name.length > 22 ? name.slice(0, 21) + "\u2026" : name;
   UI.els["btn-track"].textContent = (i + 1) + "/" + n + "  " + short;
   UI.els["track-tag"].textContent = (i + 1) + "/" + n + " " + short;
+  UI.els["btn-del"].hidden = !(e.playlist[i] && e.playlist[i].id !== undefined);
+}
+
+/* Saklanmis bir yuklemeyi bu cihazdan kaldirir. */
+function deleteCurrentTrack() {
+  var e = APP.engine, i = e.trackIndex, track = e.playlist[i];
+  if (!track || track.id === undefined) return;
+  dbDelete(track.id).then(function () {
+    e.playlist.splice(i, 1);
+    log("yukleme silindi:", track.name);
+    if (!e.playlist.length) {
+      e.stopFile();
+      e.setMode("synth");
+      syncSourceButton(); syncTrackUI();
+      return;
+    }
+    return e.loadTrack(Math.min(i, e.playlist.length - 1)).then(function () {
+      if (e.playing && e.mode === "file") e.startFile(0);
+      syncTrackUI();
+    });
+  })["catch"](function (err) { fail("Silinemedi", err); });
 }
 
 function skipTrack(delta) {
@@ -2077,11 +2382,28 @@ function skipTrack(delta) {
   });
 }
 
+/* Dar ekranda buton yazilari kisalir; genis ekranda tam yazi kalir. */
+var SHORT_UI = false;
+function lbl(full, short) { return SHORT_UI ? short : full; }
+
+function applyCompactLabels() {
+  SHORT_UI = window.innerWidth < 820;
+  UI.els["btn-full"].textContent = lbl("TAM EKRAN", "\u26F6");
+  UI.els["btn-midi"].textContent = APP.melodyName
+    ? (SHORT_UI ? "MIDI \u00D7" : "MIDI: " + APP.melodyName + "  X")
+    : lbl("DOSYA YUKLE", "+ MP3");
+  UI.els["btn-play"].textContent = APP.engine.playing
+    ? lbl("DURAKLAT", "\u23F8") : lbl("DEVAM", "\u25B6");
+  UI.syncCam();
+  syncSourceButton();
+  syncTrackUI();
+}
+
 function syncSourceButton() {
   var b = UI.els["btn-src"], e = APP.engine;
   if (!e.songBuffer) { b.hidden = true; return; }
   b.hidden = false;
-  b.textContent = "KAYNAK: " + (e.mode === "file" ? "KAYIT" : "SENTEZ");
+  b.textContent = lbl("KAYNAK: ", "") + (e.mode === "file" ? "KAYIT" : "SENTEZ");
   b.setAttribute("aria-pressed", e.mode === "file" ? "true" : "false");
   UI.els["track-line"].hidden = !(e.playlist.length > 0 && e.mode === "file");
 }
@@ -2095,17 +2417,37 @@ function loadAudioFile(file) {
   var reader = new FileReader();
   reader.onerror = function () { fail("Dosya okunamadi", reader.error || new Error(file.name)); };
   reader.onload = function () {
-    APP.engine.loadAudio(reader.result, file.name).then(function (buf) {
+    var raw = reader.result;
+    APP.engine.loadAudio(raw, file.name, file.type).then(function (buf) {
       var e = APP.engine;
-      /* listeye ekle ve ona gec */
-      e.playlist.push({ el: null, name: file.name.replace(/\.[^.]+$/, ""), buffer: buf });
+      /* listeye ekle ve ona gec; medya yolunda ham bayt saklanir */
+      e.playlist.push({
+        el: null, name: file.name.replace(/\.[^.]+$/, ""),
+        buffer: e.useMedia ? null : buf,
+        data: e.useMedia ? raw : null,
+        mime: file.type || "audio/mpeg"
+      });
+      var added = e.playlist[e.playlist.length - 1];
       e.trackIndex = e.playlist.length - 1;
-      e.songBuffer = buf; e.songName = file.name;
+      if (!e.useMedia) { e.songBuffer = buf; e.songDuration = buf.duration; }
+      e.songName = file.name;
       e.setMode("file");
       if (e.playing) e.startFile(0);
-      UI.els["err"].classList.remove("show");
+      clearError();
       syncSourceButton(); syncTrackUI();
-      log("ses yuklendi:", file.name, buf.duration.toFixed(1) + " s,", buf.numberOfChannels + " kanal");
+      log("ses yuklendi:", file.name, (buf.duration || 0).toFixed(1) + " s");
+
+      /* bu cihazda kalici yap */
+      saveUpload(file).then(function (id) {
+        added.id = id;
+        added.blob = file;
+        added.data = null;               /* artik blob'dan okunur, bellekte tutulmaz */
+        syncTrackUI();
+        log("yukleme saklandi, id", id);
+      })["catch"](function (err) {
+        warn("yukleme saklanamadi:", err.message);
+        fail("Yukleme saklanamadi", err);
+      });
     })["catch"](function (e) { fail("Ses cozulemedi", e); });
   };
   reader.readAsArrayBuffer(file);
@@ -2122,7 +2464,7 @@ function loadMidiFile(file) {
       APP.engine.setMode("synth");
       applyMelody(mel, file.name.replace(/\.midi?$/i, "").slice(0, 18));
       syncSourceButton();
-      document.getElementById("err").classList.remove("show");
+      clearError();
       log("midi:", file.name, parsed.tracks + " parca,", mel.noteCount + " nota,",
           mel.loopBars + " bar, atlanan", mel.skipped);
     } catch (e) {
@@ -2140,6 +2482,63 @@ function loadDroppedFile(file) {
   else fail("Desteklenmeyen dosya", new Error(file.name + " — .mp3/.wav ya da .mid bekleniyor."));
 }
 
+/* tracks.json: siteyle birlikte yayinlanan parca listesi (GitHub Pages icin).
+   [{"name": "Gosterilecek ad", "file": "tracks/dosya.mp3"}, ...] */
+function loadManifest() {
+  if (location.protocol === "file:") return Promise.resolve([]);
+  return fetch("tracks.json", { cache: "no-cache" }).then(function (r) {
+    if (!r.ok) throw new Error("tracks.json yok (" + r.status + ")");
+    return r.json();
+  }).then(function (list) {
+    if (!Array.isArray(list)) throw new Error("tracks.json bir dizi olmali.");
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      var file = typeof t === "string" ? t : t && t.file;
+      if (!file) { warn("tracks.json girdisi atlandi:", JSON.stringify(t)); continue; }
+      out.push({
+        el: null, url: file, blob: null, data: null, buffer: null,
+        name: (t && t.name) || file.split("/").pop().replace(/\.[^.]+$/, ""),
+        mime: "audio/mpeg"
+      });
+    }
+    log("tracks.json:", out.length, "parca");
+    return out;
+  })["catch"](function (e) { log("manifest yok:", e.message); return []; });
+}
+
+/* Bu cihazda saklanmis yuklemeler. */
+function loadSaved() {
+  return dbList().then(function (rows) {
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!r || !r.blob) continue;
+      out.push({
+        el: null, url: null, blob: r.blob, data: null, buffer: null,
+        name: r.name || "yukleme", mime: r.mime || "audio/mpeg", id: r.id
+      });
+    }
+    log("saklanan yukleme:", out.length);
+    return out;
+  })["catch"](function (e) { warn("saklanan parcalar okunamadi:", e.message); return []; });
+}
+
+/* Yuklenen dosyayi bu cihazda kalici hale getirir. */
+function saveUpload(file) {
+  return dbList().then(function (rows) {
+    var used = 0;
+    for (var i = 0; i < rows.length; i++) used += (rows[i].size || 0);
+    if ((used + file.size) / 1048576 > MAX_STORE_MB) {
+      throw new Error("Yerel depo dolu (" + MAX_STORE_MB + " MB). Once bir yuklemeyi sil.");
+    }
+    return dbAdd({
+      name: file.name.replace(/\.[^.]+$/, ""), mime: file.type || "audio/mpeg",
+      size: file.size, added: Date.now(), blob: file
+    });
+  });
+}
+
 /* Sayfanin yanindaki song.mp3'u sessizce dener. */
 function tryLocalSong() {
   if (location.protocol === "file:") { log("file:// — song.mp3 otomatik yuklenemez, dosyayi surukle"); return; }
@@ -2150,7 +2549,7 @@ function tryLocalSong() {
     return APP.engine.loadAudio(buf, "song.mp3");
   }).then(function (b) {
     APP.engine.setMode("file");
-    UI.els["btn-midi"].textContent = "SARKI: song.mp3";
+    UI.els["btn-midi"].textContent = lbl("SARKI: ", "") + "song.mp3";
     syncSourceButton();
     log("song.mp3 yuklendi:", b.duration.toFixed(1), "s");
   })["catch"](function (e) { log("yerel song.mp3 yok:", e.message); });
@@ -2221,15 +2620,26 @@ function togglePlay() {
   if (!e.ready) return;
   if (e.playing) {
     e.pause().then(function () {
-      btn.textContent = "DEVAM";
+      btn.textContent = lbl("DEVAM", "\u25B6");
       btn.setAttribute("aria-pressed", "false");
     })["catch"](function (err) { fail("Duraklatma", err); });
   } else {
     e.resume().then(function () {
-      btn.textContent = "DURAKLAT";
+      btn.textContent = lbl("DURAKLAT", "\u23F8");
       btn.setAttribute("aria-pressed", "true");
     })["catch"](function (err) { fail("Devam ettirme", err); });
   }
+}
+
+/* Konser sirasinda ekran sonmesin. Desteklenmiyorsa sessizce gecilir. */
+var wakeLock = null;
+function keepAwake() {
+  if (!navigator.wakeLock || !navigator.wakeLock.request) return;
+  navigator.wakeLock.request("screen").then(function (lock) {
+    wakeLock = lock;
+    lock.addEventListener("release", function () { wakeLock = null; });
+    log("ekran uyanik tutuluyor");
+  })["catch"](function (e) { log("wake lock alinamadi:", e.message); });
 }
 
 function toggleFullscreen() {
@@ -2263,6 +2673,18 @@ function loop(now) {
   }
 }
 
+/* Calma listesi uc kaynaktan birlesir: sayfaya gomulu parcalar, siteyle
+   yayinlanan tracks.json ve bu cihazda saklanmis yuklemeler. */
+function buildPlaylist() {
+  var embedded = embeddedSongs();
+  return Promise.all([loadManifest(), loadSaved()]).then(function (res) {
+    var list = embedded.concat(res[0], res[1]);
+    log("calma listesi:", embedded.length, "gomulu +", res[0].length, "yayinlanan +",
+        res[1].length, "saklanan");
+    return list;
+  });
+}
+
 function startConcert() {
   var btn = UI.els.enter;
   btn.disabled = true;
@@ -2276,39 +2698,46 @@ function startConcert() {
       APP.stage.onBar(0);
       syncSourceButton();
       syncTrackUI();
+      keepAwake();
     });
+  }
+
+  function fallbackToSynth(why) {
+    warn("kayit modu acilamadi, sentezle devam:", why);
+    APP.engine.mode = "synth";
+    APP.engine.setPlaylist([]);
+    return go();
   }
 
   try {
     var fresh = !APP.engine.ready;
     if (fresh) APP.engine.init();
+    /* iOS: resume() jestin ICINDE, senkron cagrilmali — await'ten sonra reddedilir. */
+    APP.engine.unlock();
 
-    var emb = fresh ? embeddedSongs() : [];
-    if (emb.length) {
-      btn.textContent = "SARKI ACILIYOR...";
-      APP.engine.setPlaylist(emb);
-      APP.engine.onTrackChange = function () { syncTrackUI(); };
-      APP.engine.loadTrack(0).then(function (b) {
-        APP.engine.setMode("file");
-        syncTrackUI();
-        log("gomulu liste:", emb.length + " parca, ilk parca", b.duration.toFixed(1) + " s");
-        return go();
-      })["catch"](function (e) {
-        warn("Gomulu sarki calinamadi, sentez moduna dusuluyor:", e.message);
-        APP.engine.setPlaylist([]);
-        APP.engine.mode = "synth";
-        go()["catch"](function (e2) {
-          btn.disabled = false; btn.textContent = "TEKRAR DENE";
-          fail("Ses baslatilamadi", e2);
-        });
+    if (!fresh) {
+      go()["catch"](function (e) {
+        btn.disabled = false; btn.textContent = "TEKRAR DENE";
+        fail("Ses baslatilamadi", e);
       });
       return;
     }
 
-    if (fresh) tryLocalSong();
-    go()["catch"](function (e) {
-      btn.disabled = false; btn.textContent = "TEKRAR DENE";
-      fail("Ses baslatilamadi", e);
+    btn.textContent = "PARCALAR ACILIYOR...";
+    buildPlaylist().then(function (list) {
+      if (!list.length) { tryLocalSong(); return go(); }
+      APP.engine.setPlaylist(list);
+      APP.engine.onTrackChange = function () { syncTrackUI(); };
+      return APP.engine.loadTrack(0).then(function () {
+        APP.engine.setMode("file");
+        syncTrackUI();
+        return go();
+      })["catch"](function (e) { return fallbackToSynth(e.message); });
+    })["catch"](function (e) {
+      fallbackToSynth(e.message)["catch"](function (e2) {
+        btn.disabled = false; btn.textContent = "TEKRAR DENE";
+        fail("Ses baslatilamadi", e2);
+      });
     });
   } catch (e) {
     btn.disabled = false; btn.textContent = "TEKRAR DENE";
@@ -2319,11 +2748,12 @@ function startConcert() {
 function boot() {
   try {
     UI.init();
+    if (HAS_TOUCH) document.body.classList.add("touch");
     APP.hudOn = true;
     APP.stage = new Stage(document.getElementById("stage-canvas"));
     APP.stage.init();
     APP.stage.setShot(0, 0);
-    UI.syncCam();
+    applyCompactLabels();
     requestAnimationFrame(loop);
   } catch (e) {
     fail("Sahne kurulamadi", e);
@@ -2344,6 +2774,7 @@ function boot() {
   UI.els["btn-track"].addEventListener("click", function () { skipTrack(1); });
   UI.els["btn-next"].addEventListener("click", function () { skipTrack(1); });
   UI.els["btn-prev"].addEventListener("click", function () { skipTrack(-1); });
+  UI.els["btn-del"].addEventListener("click", deleteCurrentTrack);
   bindDropZone();
   UI.els.vol.addEventListener("input", function () {
     CONFIG.master = clamp(parseInt(this.value, 10) / 100, 0, 1);
@@ -2370,6 +2801,8 @@ function boot() {
     if (document.hidden && APP.engine.playing) {
       togglePlay();
       log("sekme gizlendi, duraklatildi");
+    } else if (!document.hidden && !wakeLock && APP.engine.playing) {
+      keepAwake();
     }
   });
 

@@ -1,0 +1,50 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sayfayi dogrula
+        run: |
+          test -f index.html || { echo "index.html yok"; exit 1; }
+          if [ -f tracks.json ]; then
+            python3 - <<'PY'
+          import json, os, sys
+          items = json.load(open("tracks.json"))
+          if not isinstance(items, list):
+              sys.exit("tracks.json bir dizi olmali")
+          missing = [t["file"] for t in items
+                     if isinstance(t, dict) and t.get("file") and not os.path.isfile(t["file"])]
+          if missing:
+              sys.exit("tracks.json'da olmayan dosyalar: " + ", ".join(missing))
+          print(f"tracks.json dogrulandi: {len(items)} parca")
+          PY
+          else
+            echo "tracks.json yok — site sentez moduyla acilir"
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deploy
+        uses: actions/deploy-pages@v4

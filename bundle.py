@@ -9,11 +9,13 @@ de gomulur ve dosya internet olmadan, cift tiklamayla (file://) calisir.
 Kullanim:
   python3 bundle.py -a 1.mp3 -a 2.mp3 -a 3.mp3 --three three.min.js -o konser.html
   python3 bundle.py -a tracks/*.mp3                  # kabuk genislemesi de olur
+  python3 bundle.py -a tracks/*.mp3 --manifest       # paketleme yok: tracks.json uret
   python3 bundle.py -a song.mp3 --no-audio-check     # bicim kontrolunu atla
 """
 
 import argparse
 import base64
+import json
 import logging
 import mimetypes
 import os
@@ -138,16 +140,39 @@ def build(page_path, audio_paths, three_path, out_path, check_audio=True):
     return out_path
 
 
+def write_manifest(audio_paths, manifest_path, base_dir):
+    """tracks.json uretir: GitHub Pages'te parcalar bu listeden akar."""
+    items = []
+    for path in audio_paths:
+        rel = os.path.relpath(path, base_dir).replace(os.sep, "/")
+        items.append({"name": track_name(path), "file": rel})
+    try:
+        with open(manifest_path, "w", encoding="utf-8") as fh:
+            json.dump(items, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+    except OSError as exc:
+        raise SystemExit(f"hata: manifest yazilamadi: {exc}")
+    LOG.info("manifest yazildi: %s (%d parca)", manifest_path, len(items))
+    for it in items:
+        LOG.debug("  %s -> %s", it["name"], it["file"])
+    return manifest_path
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Konseri tek dosyaya paketler.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     ap.add_argument("-p", "--page", default="index.html", help="kaynak sayfa")
-    ap.add_argument("-a", "--audio", required=True, action="append", metavar="DOSYA",
-                    help="gomulecek ses dosyasi; sirayla birden fazla kez verilebilir")
+    ap.add_argument("-a", "--audio", required=True, action="append", nargs="+", metavar="DOSYA",
+                    help="ses dosyalari; tekrarlanabilir ve her seferinde birden fazla "
+                         "dosya alabilir (kabuk genislemesi calisir)")
     ap.add_argument("-t", "--three", help="gomulecek three.min.js (cevrimdisi calismasi icin)")
     ap.add_argument("-o", "--out", default="konser.html", help="cikti dosyasi")
+    ap.add_argument("-m", "--manifest", nargs="?", const="tracks.json", metavar="TRACKS_JSON",
+                    help="paketlemek yerine tracks.json uret (GitHub Pages icin)")
+    ap.add_argument("--base-dir", default=".",
+                    help="manifest yollarinin gore verilecegi kok dizin")
     ap.add_argument("--no-audio-check", action="store_true", help="ses bicimi kontrolunu atla")
     ap.add_argument("-v", "--verbose", action="store_true", help="ayrintili log")
     args = ap.parse_args(argv)
@@ -157,14 +182,21 @@ def main(argv=None):
         format="%(levelname)s: %(message)s",
     )
 
-    if os.path.abspath(args.out) == os.path.abspath(args.page):
-        raise SystemExit("hata: cikti kaynak sayfanin uzerine yazamaz.")
+    # -a hem tekrarlanabilir hem coklu: [[a, b], [c]] -> [a, b, c]
+    audio = [path for group in args.audio for path in group]
 
-    missing = [p for p in args.audio if not os.path.isfile(p)]
+    missing = [p for p in audio if not os.path.isfile(p)]
     if missing:
         raise SystemExit("hata: bulunamayan ses dosyalari: " + ", ".join(missing))
 
-    build(args.page, args.audio, args.three, args.out, check_audio=not args.no_audio_check)
+    if args.manifest:
+        write_manifest(audio, args.manifest, args.base_dir)
+        return 0
+
+    if os.path.abspath(args.out) == os.path.abspath(args.page):
+        raise SystemExit("hata: cikti kaynak sayfanin uzerine yazamaz.")
+
+    build(args.page, audio, args.three, args.out, check_audio=not args.no_audio_check)
     return 0
 
 
