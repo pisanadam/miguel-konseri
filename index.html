@@ -90,6 +90,14 @@
   #keys kbd{border:1px solid rgba(139,132,173,.45);border-radius:3px;padding:2px 6px;margin:0 2px;
     font-family:inherit;font-size:10px;color:var(--fg);}
 
+  #drop{position:fixed;inset:0;z-index:25;display:none;align-items:center;justify-content:center;
+    background:rgba(4,1,10,.86);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    border:3px dashed var(--neon);text-align:center;padding:24px;}
+  #drop.on{display:flex;}
+  #drop div{font-size:clamp(14px,3.4vw,24px);letter-spacing:.28em;text-transform:uppercase;color:#fff;
+    text-shadow:0 0 20px var(--neon);line-height:2;}
+  #drop small{display:block;color:var(--dim);font-size:11px;letter-spacing:.16em;margin-top:10px;}
+
   #err{position:fixed;z-index:30;left:50%;top:18px;transform:translateX(-50%);
     max-width:min(92vw,660px);display:none;padding:12px 16px;border-radius:3px;
     background:rgba(46,4,14,.94);border:1px solid #ff3b5c;color:#ffd9e0;
@@ -134,6 +142,8 @@
 <div id="controls">
   <input id="vol" type="range" min="0" max="100" value="80" aria-label="Ses seviyesi" title="Ses seviyesi" />
   <button class="ctl" id="btn-play" aria-pressed="true" title="Bosluk">DURAKLAT</button>
+  <button class="ctl" id="btn-midi" title="M — kendi .mid dosyani cal">MIDI YUKLE</button>
+  <input type="file" id="midi-file" accept=".mid,.midi,audio/midi" hidden />
   <button class="ctl" id="btn-cam" title="C">KAMERA: SINEMA</button>
   <button class="ctl" id="btn-hud" aria-pressed="true" title="H">HUD</button>
   <button class="ctl" id="btn-full" title="F">TAM EKRAN</button>
@@ -143,12 +153,15 @@
   <h2>PISANADAM SUNAR</h2>
   <h1>MIGUEL<br />PHONK</h1>
   <p>Sarkinin hook notalari tarayicida canli sentezleniyor: 808 sub, cowbell, trap davul ve lead melodi.
-     Isik, lazer ve kalabalik sesin kendisine tepki veriyor. Ses icin dokunma gerekli.</p>
+     Isik, lazer ve kalabalik sesin kendisine tepki veriyor. Ses icin dokunma gerekli.<br />
+     Kendi notalarin varsa <b>.mid dosyasini sayfaya birak</b> — ayni sentezle o calinir.</p>
   <button id="enter" type="button">KONSERI BASLAT</button>
   <div id="keys">
-    <kbd>Bosluk</kbd> oynat/durdur &nbsp; <kbd>C</kbd> kamera &nbsp; <kbd>H</kbd> hud &nbsp; <kbd>F</kbd> tam ekran &nbsp; <kbd>surukle</kbd> bak
+    <kbd>Bosluk</kbd> oynat/durdur &nbsp; <kbd>C</kbd> kamera &nbsp; <kbd>M</kbd> midi &nbsp; <kbd>H</kbd> hud &nbsp; <kbd>F</kbd> tam ekran &nbsp; <kbd>surukle</kbd> bak
   </div>
 </div>
+
+<div id="drop"><div>MIDI DOSYASINI BIRAK<small>.mid / .midi &middot; notalar bu sentezle calinir</small></div></div>
 
 <div id="err" role="alert"></div>
 
@@ -174,7 +187,7 @@ function qsNumber(key, fallback, min, max) {
 }
 
 var CONFIG = {
-  bpm:      qsNumber("bpm", 140, 60, 200),
+  bpm:      qsNumber("bpm", 150, 40, 220),
   master:   qsNumber("vol", 0.8, 0, 1),
   quality:  (QS.get("quality") || "auto").toLowerCase(),
   debug:    QS.get("debug") === "1",
@@ -231,12 +244,13 @@ log("kalite:", QUALITY, TIER);
 
 var STEPS_PER_BAR = 16;
 
-/* 4 barlik akor dongusu: Bm - G - D - A */
+/* Sarkinin gercek armonisi: Fa# minor, dongu D - F#m - C#m - Bm.
+   Orijinal kayit ~80 BPM; phonk edit'i hizli calindigi icin varsayilan 150 BPM. */
 var CHORDS = [
-  { root: 35, pad: [59, 62, 66] },  /* Bm  */
-  { root: 31, pad: [55, 59, 62] },  /* G   */
-  { root: 38, pad: [57, 62, 66] },  /* D   */
-  { root: 33, pad: [57, 61, 64] }   /* A   */
+  { root: 38, pad: [62, 66, 69] },  /* D    */
+  { root: 42, pad: [66, 69, 73] },  /* F#m  */
+  { root: 37, pad: [61, 64, 68] },  /* C#m  */
+  { root: 35, pad: [59, 62, 66] }   /* Bm   */
 ];
 
 /* Davul gridleri: 1 = vurus, 2 = aksanli vurus */
@@ -250,12 +264,16 @@ var DRUMS = {
   cowbell: [2,0,0,1, 0,1,0,0, 2,0,1,0, 0,1,0,1]
 };
 
-/* Lead hook — 4 bar, [adim, midi, 16'lik cinsinden sure] */
+/* Lead hook — 4 bar, [adim, midi, 16'lik cinsinden sure]
+   Fa# minor gami: F# G# A B C# D E -> 66 68 69 71 73 74 76
+   Akorlarin uzerine oturur; sarkinin A3-E5 ses araliginda kalir.
+   NOT: bu, dogru ton ve akor uzerine yazilmis bir uyarlamadir, notasi
+   dogrulanmis transkripsiyon degildir. Gercek notalar icin sayfaya MIDI birak. */
 var LEAD = [
-  [[0,66,2],[2,69,2],[4,66,2],[6,64,1],[7,62,1],[8,64,4],[12,62,2],[14,61,2]],
-  [[0,59,4],[4,62,2],[6,64,2],[8,66,4],[12,64,2],[14,62,2]],
-  [[0,66,2],[2,69,2],[4,71,2],[6,69,1],[7,66,1],[8,64,4],[12,66,2],[14,64,2]],
-  [[0,59,2],[2,61,2],[4,62,4],[8,66,6],[14,64,2]]
+  [[0,73,2],[2,74,2],[4,73,2],[6,69,2],[8,71,4],[12,69,4]],
+  [[0,73,3],[3,71,1],[4,69,4],[8,66,4],[12,69,2],[14,71,2]],
+  [[0,76,2],[2,73,2],[4,76,2],[6,73,1],[7,71,1],[8,73,4],[12,68,4]],
+  [[0,71,4],[4,74,2],[6,73,2],[8,71,2],[10,69,2],[12,66,4]]
 ];
 
 /* Bass 808 — adim ve akor koke gore ofset (yariton) */
@@ -287,6 +305,136 @@ function sectionAtBar(bar) {
 }
 
 /* ============================================================================
+   1b) MIDI OKUYUCU
+   Sarkinin gercek notalarini calmak icin: .mid dosyasini sayfaya birak.
+   Standard MIDI File (format 0/1) cozumleyici — harici kutuphane yok.
+   ========================================================================== */
+
+function MidiReader(buffer) {
+  this.view = new DataView(buffer);
+  this.pos = 0;
+}
+
+MidiReader.prototype.u8  = function () { return this.view.getUint8(this.pos++); };
+MidiReader.prototype.u16 = function () { var v = this.view.getUint16(this.pos); this.pos += 2; return v; };
+MidiReader.prototype.u32 = function () { var v = this.view.getUint32(this.pos); this.pos += 4; return v; };
+MidiReader.prototype.str = function (n) {
+  var out = "";
+  for (var i = 0; i < n; i++) out += String.fromCharCode(this.u8());
+  return out;
+};
+MidiReader.prototype.varint = function () {
+  var v = 0, b, guard = 0;
+  do {
+    if (this.pos >= this.view.byteLength) throw new Error("MIDI: dosya beklenenden erken bitti.");
+    b = this.u8();
+    v = (v << 7) | (b & 0x7f);
+    if (++guard > 6) throw new Error("MIDI: bozuk uzunluk alani.");
+  } while (b & 0x80);
+  return v;
+};
+
+/* Dosyayi {notes:[{start,end,midi,channel}], ticksPerQuarter, bpm} olarak cozer. */
+function parseMidi(buffer) {
+  var r = new MidiReader(buffer);
+  if (r.str(4) !== "MThd") throw new Error("MIDI degil: MThd basligi yok.");
+  var headLen = r.u32();
+  var format = r.u16();
+  var ntrks = r.u16();
+  var division = r.u16();
+  r.pos = 8 + headLen;
+
+  var tpq = 480, bpm = null;
+  if (division & 0x8000) {
+    warn("MIDI: SMPTE zaman kodu, varsayilan 480 tick/nota kullaniliyor.");
+  } else {
+    tpq = division || 480;
+  }
+  if (format > 2) throw new Error("MIDI: desteklenmeyen format " + format + ".");
+
+  var notes = [];
+  for (var tr = 0; tr < ntrks; tr++) {
+    if (r.pos + 8 > r.view.byteLength) break;
+    var id = r.str(4);
+    var len = r.u32();
+    var end = r.pos + len;
+    if (id !== "MTrk") { r.pos = end; continue; }
+
+    var tick = 0, status = 0, open = {};
+    while (r.pos < end) {
+      tick += r.varint();
+      var b = r.u8();
+      if (b & 0x80) { status = b; } else { r.pos--; }         /* running status */
+      var type = status & 0xf0, ch = status & 0x0f;
+
+      if (type === 0x90 || type === 0x80) {
+        var note = r.u8(), vel = r.u8();
+        var key = ch + ":" + note;
+        if (type === 0x90 && vel > 0) {
+          (open[key] || (open[key] = [])).push(tick);
+        } else {
+          var stack = open[key];
+          if (stack && stack.length) {
+            notes.push({ start: stack.shift(), end: tick, midi: note, channel: ch });
+          }
+        }
+      } else if (type === 0xa0 || type === 0xb0 || type === 0xe0) {
+        r.pos += 2;
+      } else if (type === 0xc0 || type === 0xd0) {
+        r.pos += 1;
+      } else if (status === 0xff) {
+        var meta = r.u8(), mlen = r.varint();
+        if (meta === 0x51 && mlen === 3) {
+          var us = (r.u8() << 16) | (r.u8() << 8) | r.u8();
+          if (bpm === null && us > 0) bpm = 60000000 / us;
+        } else {
+          r.pos += mlen;
+        }
+      } else if (status === 0xf0 || status === 0xf7) {
+        r.pos += r.varint();
+      } else {
+        throw new Error("MIDI: taninmayan olay 0x" + status.toString(16) + ".");
+      }
+    }
+    r.pos = end;
+  }
+
+  if (!notes.length) throw new Error("MIDI: dosyada nota bulunamadi.");
+  notes.sort(function (a, b) { return a.start - b.start || a.midi - b.midi; });
+  return { notes: notes, ticksPerQuarter: tpq, bpm: bpm, format: format, tracks: ntrks };
+}
+
+/* Cozulen notalari 16'lik grid'e oturtup lead/bass olarak ayirir. */
+function melodyFromMidi(parsed, opts) {
+  var o = opts || {};
+  var splitAt = o.splitAt === undefined ? 52 : o.splitAt;   /* altindakiler 808 */
+  var maxPoly = o.maxPoly === undefined ? 3 : o.maxPoly;
+  var tpq = parsed.ticksPerQuarter;
+  var lead = {}, bass = {}, maxStep = 0, kept = 0, skipped = 0;
+
+  for (var i = 0; i < parsed.notes.length; i++) {
+    var n = parsed.notes[i];
+    if (n.channel === 9) { skipped++; continue; }            /* davul kanali */
+    var step = Math.round((n.start * 4) / tpq);
+    var dur = Math.max(1, Math.round(((n.end - n.start) * 4) / tpq));
+    if (step < 0) continue;
+    var target = n.midi < splitAt ? bass : lead;
+    var slot = target[step] || (target[step] = []);
+    if (slot.length >= maxPoly) { skipped++; continue; }
+    slot.push([n.midi, dur]);
+    kept++;
+    if (step + dur > maxStep) maxStep = step + dur;
+  }
+
+  if (!kept) throw new Error("MIDI: kullanilabilir melodi notasi yok (hepsi davul kanalinda mi?).");
+  var loopBars = Math.max(1, Math.ceil(maxStep / STEPS_PER_BAR));
+  return {
+    lead: lead, bass: bass, loopBars: loopBars, loopSteps: loopBars * STEPS_PER_BAR,
+    noteCount: kept, skipped: skipped, bpm: parsed.bpm
+  };
+}
+
+/* ============================================================================
    2) SES MOTORU
    ========================================================================== */
 
@@ -301,6 +449,7 @@ function AudioEngine() {
   this.events = [];         /* gorsel olay kuyrugu: {t, type, v} */
   this.noiseBuf = null;
   this.nodes = {};
+  this.userMelody = null;   /* MIDI'den gelen melodi; varsa yerlesik hook yerine bu calar */
 }
 
 AudioEngine.prototype.init = function () {
@@ -561,6 +710,31 @@ AudioEngine.prototype.impact = function (t) {
 
 AudioEngine.prototype.stepDur = function () { return 60 / CONFIG.bpm / 4; };
 
+/* Tempoyu calarken degistirir; sekans fazini korur, delay'i yeniden hizalar. */
+AudioEngine.prototype.setBpm = function (bpm) {
+  var next = clamp(bpm, 40, 220);
+  if (!isFinite(next) || Math.abs(next - CONFIG.bpm) < 0.01) return;
+  if (this.ready && this.playing) {
+    var now = this.ctx.currentTime;
+    var elapsedSteps = (now - this.startTime) / this.stepDur();
+    CONFIG.bpm = next;
+    this.startTime = now - elapsedSteps * this.stepDur();
+  } else {
+    CONFIG.bpm = next;
+  }
+  if (this.ready) {
+    this.nodes.delay.delayTime.setTargetAtTime((60 / CONFIG.bpm) * 0.75, this.ctx.currentTime, 0.05);
+  }
+  log("bpm ->", Math.round(CONFIG.bpm));
+};
+
+/* MIDI melodisini devreye alir/kaldirir. */
+AudioEngine.prototype.setMelody = function (mel) {
+  this.userMelody = mel || null;
+  if (mel && mel.bpm) this.setBpm(mel.bpm);
+  log(mel ? "midi melodi yuklendi: " + mel.noteCount + " nota / " + mel.loopBars + " bar" : "yerlesik hook'a donuldu");
+};
+
 AudioEngine.prototype.scheduleStep = function (absStep, t) {
   var bar = Math.floor(absStep / STEPS_PER_BAR);
   var s = absStep % STEPS_PER_BAR;
@@ -570,13 +744,15 @@ AudioEngine.prototype.scheduleStep = function (absStep, t) {
   var sd = this.stepDur();
   var barPos = sec.barInSection;
   var lastBar = barPos === sec.def.bars - 1;
+  var um = this.userMelody;
+  var umStep = um ? (absStep % um.loopSteps) : -1;
 
   /* --- bolum gecis vurgusu --- */
   if (s === 0 && barPos === 0 && sec.def.energy >= 1) this.impact(t);
   if (s === 0 && p.riser) this.riser(t, sd * STEPS_PER_BAR * sec.def.bars);
 
-  /* --- pad --- */
-  if (p.pad && s === 0) this.pad(t, chord.pad, sd * STEPS_PER_BAR * 0.98, 0.055 * p.pad);
+  /* --- pad --- (MIDI yuklendiginde kapali: yerlesik armoni yabanci tonla catismasin) */
+  if (p.pad && s === 0 && !um) this.pad(t, chord.pad, sd * STEPS_PER_BAR * 0.98, 0.055 * p.pad);
 
   /* --- kick --- */
   if (p.kick) {
@@ -586,9 +762,16 @@ AudioEngine.prototype.scheduleStep = function (absStep, t) {
 
   /* --- 808 --- */
   if (p.bass) {
-    var bl = BASS[bar % BASS.length];
-    for (var i = 0; i < bl.length; i++) {
-      if (bl[i][0] === s) this.sub808(t, chord.root + bl[i][1], sd * bl[i][2], 0.62 * p.bass);
+    if (um) {
+      var ub = um.bass[umStep];
+      if (ub) for (var ui = 0; ui < ub.length; ui++) {
+        this.sub808(t, ub[ui][0], sd * ub[ui][1], 0.62 * p.bass);
+      }
+    } else {
+      var bl = BASS[bar % BASS.length];
+      for (var i = 0; i < bl.length; i++) {
+        if (bl[i][0] === s) this.sub808(t, chord.root + bl[i][1], sd * bl[i][2], 0.62 * p.bass);
+      }
     }
   }
 
@@ -613,9 +796,19 @@ AudioEngine.prototype.scheduleStep = function (absStep, t) {
 
   /* --- lead --- */
   if (p.lead) {
-    var ll = LEAD[bar % LEAD.length];
-    for (var j = 0; j < ll.length; j++) {
-      if (ll[j][0] === s) this.lead(t, ll[j][1], sd * ll[j][2] * 0.95, 0.16 * p.lead);
+    if (um) {
+      var ul = um.lead[umStep];
+      if (ul) {
+        var voice = 0.16 * p.lead / Math.max(1, Math.sqrt(ul.length));
+        for (var uj = 0; uj < ul.length; uj++) {
+          this.lead(t, ul[uj][0], sd * ul[uj][1] * 0.95, voice);
+        }
+      }
+    } else {
+      var ll = LEAD[bar % LEAD.length];
+      for (var j = 0; j < ll.length; j++) {
+        if (ll[j][0] === s) this.lead(t, ll[j][1], sd * ll[j][2] * 0.95, 0.16 * p.lead);
+      }
     }
   }
 
@@ -1519,8 +1712,9 @@ var UI = {
   strobeTimer: null,
 
   init: function () {
-    var ids = ["gate", "enter", "btn-play", "btn-cam", "btn-hud", "btn-full", "vol",
-               "section-tag", "bpm-tag", "bar-tag", "cam-tag", "fps-tag", "hud", "meters", "strobe"];
+    var ids = ["gate", "enter", "btn-play", "btn-cam", "btn-hud", "btn-full", "btn-midi", "midi-file",
+               "drop", "vol", "section-tag", "bpm-tag", "bar-tag", "cam-tag", "fps-tag",
+               "hud", "meters", "strobe"];
     for (var i = 0; i < ids.length; i++) this.els[ids[i]] = document.getElementById(ids[i]);
     this.els["bpm-tag"].textContent = Math.round(CONFIG.bpm);
     this.els.vol.value = Math.round(CONFIG.master * 100);
@@ -1567,9 +1761,65 @@ var UI = {
   }
 };
 
+/* ------------------------------------------------------------ MIDI yukleme */
+function applyMelody(mel, label) {
+  APP.engine.setMelody(mel);
+  APP.melodyName = label || null;
+  UI.els["btn-midi"].textContent = label ? "MIDI: " + label + "  X" : "MIDI YUKLE";
+  UI.els["btn-midi"].setAttribute("aria-pressed", label ? "true" : "false");
+  UI.els["bpm-tag"].textContent = Math.round(CONFIG.bpm);
+}
+
+function loadMidiFile(file) {
+  if (!file) return;
+  if (file.size > 4 * 1024 * 1024) { fail("MIDI cok buyuk", new Error(file.name + " 4 MB sinirini asiyor.")); return; }
+  var reader = new FileReader();
+  reader.onerror = function () { fail("Dosya okunamadi", reader.error || new Error(file.name)); };
+  reader.onload = function () {
+    try {
+      var parsed = parseMidi(reader.result);
+      var mel = melodyFromMidi(parsed);
+      applyMelody(mel, file.name.replace(/\.midi?$/i, "").slice(0, 18));
+      document.getElementById("err").classList.remove("show");
+      log("midi:", file.name, parsed.tracks + " parca,", mel.noteCount + " nota,",
+          mel.loopBars + " bar, atlanan", mel.skipped);
+    } catch (e) {
+      fail("MIDI okunamadi", e);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function toggleMidi() {
+  if (APP.melodyName) applyMelody(null, null);
+  else UI.els["midi-file"].click();
+}
+
+function bindDropZone() {
+  var zone = UI.els.drop, depth = 0;
+  function hasFiles(e) {
+    var dt = e.dataTransfer;
+    return dt && dt.types && Array.prototype.indexOf.call(dt.types, "Files") >= 0;
+  }
+  window.addEventListener("dragenter", function (e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); depth++; zone.classList.add("on");
+  });
+  window.addEventListener("dragover", function (e) { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener("dragleave", function () {
+    if (--depth <= 0) { depth = 0; zone.classList.remove("on"); }
+  });
+  window.addEventListener("drop", function (e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); depth = 0; zone.classList.remove("on");
+    loadMidiFile(e.dataTransfer.files[0]);
+  });
+}
+
 var APP = {
   engine: new AudioEngine(),
   stage: null,
+  melodyName: null,
   running: false,
   last: 0,
   fpsAcc: 0,
@@ -1680,6 +1930,12 @@ function boot() {
   UI.els["btn-cam"].addEventListener("click", cycleCamera);
   UI.els["btn-hud"].addEventListener("click", toggleHud);
   UI.els["btn-full"].addEventListener("click", toggleFullscreen);
+  UI.els["btn-midi"].addEventListener("click", toggleMidi);
+  UI.els["midi-file"].addEventListener("change", function () {
+    loadMidiFile(this.files && this.files[0]);
+    this.value = "";
+  });
+  bindDropZone();
   UI.els.vol.addEventListener("input", function () {
     CONFIG.master = clamp(parseInt(this.value, 10) / 100, 0, 1);
     if (APP.engine.ready) {
@@ -1692,6 +1948,7 @@ function boot() {
     var k = e.key.toLowerCase();
     if (k === " " || e.code === "Space") { e.preventDefault(); APP.engine.ready ? togglePlay() : startConcert(); }
     else if (k === "c") cycleCamera();
+    else if (k === "m") toggleMidi();
     else if (k === "h") toggleHud();
     else if (k === "f") toggleFullscreen();
     else if (k === "escape" && document.fullscreenElement) toggleFullscreen();
