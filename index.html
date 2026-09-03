@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>MIGUEL PHONK — 3D KONSER</title>
-<meta name="description" content="Miguel phonk hook'unu Web Audio ile canli sentezleyip 3D sahnede calan tarayici konseri." />
+<title>JENNY — 3D PHONK KONSERI</title>
+<meta name="description" content="Jenny'nin sahne aldigi 3D phonk konseri: isik, lazer ve kalabalik calan sesin spektrumuyla surulur." />
 <style>
   :root{
     --neon:#ff2d9b;
@@ -77,6 +77,8 @@
     color:#fff;text-shadow:0 0 18px var(--neon),0 0 44px var(--neon3),0 0 90px var(--neon);
     animation:flicker 4.5s infinite;}
   #gate h2{margin:0;font-size:clamp(10px,2.4vw,15px);letter-spacing:.62em;color:var(--neon2);font-weight:400;}
+  #gate-sub{font-size:clamp(9px,2vw,12px);letter-spacing:.5em;color:var(--dim);
+    text-transform:uppercase;margin-top:-8px;}
   #gate p{margin:0;max-width:52ch;color:var(--dim);font-size:12px;line-height:1.8;letter-spacing:.06em;}
   @keyframes flicker{
     0%,100%{opacity:1}
@@ -157,8 +159,8 @@
 
 <div id="hud" aria-hidden="true">
   <div id="hud-left" class="panel">
-    <div class="title">MIGUEL &nbsp;PHONK</div>
-    <div class="sub">LIVE &middot; ARENA 3D &middot; WEB AUDIO</div>
+    <div class="title" id="artist-title">JENNY</div>
+    <div class="sub">SAHNEDE &middot; ARENA 3D &middot; CANLI</div>
   </div>
   <div id="hud-right" class="panel">
     <div>BOLUM <b id="section-tag">—</b></div>
@@ -187,7 +189,8 @@
 
 <div id="gate">
   <h2>PISANADAM SUNAR</h2>
-  <h1>MIGUEL<br />PHONK</h1>
+  <h1 id="gate-title">JENNY</h1>
+  <div id="gate-sub">PHONK ARENA &middot; CANLI YAYIN</div>
   <p>Sarkinin hook notalari tarayicida canli sentezleniyor: 808 sub, cowbell, trap davul ve lead melodi.
      Isik, lazer ve kalabalik sesin kendisine tepki veriyor. Ses icin dokunma gerekli.<br />
      Parcalar sayfanin icinde gomulu: <b>N</b> ile sonraki, <b>P</b> ile onceki.
@@ -232,6 +235,7 @@ function qsNumber(key, fallback, min, max) {
 
 var CONFIG = {
   bpm:      qsNumber("bpm", 73.7, 40, 220),
+  artist:   (QS.get("artist") || "JENNY").slice(0, 14).toUpperCase(),
   master:   qsNumber("vol", 0.8, 0, 1),
   quality:  (QS.get("quality") || "auto").toLowerCase(),
   debug:    QS.get("debug") === "1",
@@ -1470,14 +1474,14 @@ Stage.prototype.buildStage = function () {
     new THREE.BoxGeometry(9, 3.2, 3.2),
     new THREE.MeshStandardMaterial({ color: 0x1a0b33, roughness: 0.35, metalness: 0.8 })
   );
-  booth.position.set(0, 4, -12);
+  booth.position.set(0, 3.6, -13);
   g.add(booth);
 
   var boothFace = new THREE.Mesh(
     new THREE.PlaneGeometry(8.4, 2.6),
     new THREE.MeshBasicMaterial({ color: 0x22e0ff, transparent: true, opacity: 0.8, toneMapped: false })
   );
-  boothFace.position.set(0, 4, -10.38);
+  boothFace.position.set(0, 3.6, -11.38);
   this.boothFace = boothFace;
   g.add(boothFace);
 
@@ -1521,6 +1525,8 @@ Stage.prototype.buildLedWall = function () {
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   this.ledMesh = mesh;
   this.scene.add(mesh);
+  this.nameMask = this.makeTextMask(CONFIG.artist);
+  this.nameTimer = 0;
 
   /* duvar cercevesi */
   var frame = new THREE.Mesh(
@@ -1529,6 +1535,41 @@ Stage.prototype.buildLedWall = function () {
   );
   frame.position.set(0, 12.6, -23.4);
   this.scene.add(frame);
+};
+
+/* LED duvarinin cozunurlugunde bir yazi maskesi uretir: metin gizli bir tuvale
+   cizilir, piksel piksel okunur ve her LED hucresine bir 0/1 dusurulur. */
+Stage.prototype.makeTextMask = function (text) {
+  var cols = this.led.cols, rows = this.led.rows;
+  var c = document.createElement("canvas");
+  c.width = cols; c.height = rows;
+  var g = c.getContext("2d");
+  g.fillStyle = "#000"; g.fillRect(0, 0, cols, rows);
+  g.fillStyle = "#fff";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+
+  /* yaziyi duvara sigacak en buyuk boyuta getir */
+  var size = rows;
+  for (; size > 3; size--) {
+    g.font = "bold " + size + "px Impact, Haettenschweiler, sans-serif";
+    if (g.measureText(text).width <= cols - 2) break;
+  }
+  g.fillText(text, cols / 2, rows / 2 + 0.5);
+
+  var data = g.getImageData(0, 0, cols, rows).data;
+  var mask = new Uint8Array(cols * rows);
+  for (var y = 0; y < rows; y++) {
+    for (var x = 0; x < cols; x++) {
+      /* tuvalin y'si yukaridan, LED izgarasinin y'si asagidan sayilir */
+      var src = ((rows - 1 - y) * cols + x) * 4;
+      mask[y * cols + x] = data[src] > 110 ? 1 : 0;
+    }
+  }
+  var lit = 0;
+  for (var i = 0; i < mask.length; i++) lit += mask[i];
+  log("yazi maskesi:", text, lit + "/" + mask.length, "hucre, " + size + "px");
+  return lit > 4 ? mask : null;
 };
 
 /* ------------------------------------------------------------ truss */
@@ -1576,30 +1617,102 @@ Stage.prototype.buildSpeakers = function () {
   });
 };
 
-/* ------------------------------------------------------------ sanatci */
+/* ------------------------------------------------------------ sanatci: JENNY
+   Minecraft olculerinde blok karakter. 1 blok = 2.2 birim, karakter 1.8 blok
+   (~4.4 birim). Uzuvlar omuz/kalca pivotlarindan doner, boylece kol kaldirma ve
+   adim salinimi merkezden degil eklemden olur. */
+var MC = 2.2 / 16;                       /* 1 Minecraft pikseli, dunya birimi */
+
+function px(w, h, d) { return new THREE.BoxGeometry(w * MC, h * MC, d * MC); }
+
+/* Pivotlu uzuv: geometri, donme noktasi ustte (kol/bacak) olacak sekilde kaydirilir. */
+function limb(geo, mat, pivotY) {
+  var pivot = new THREE.Group();
+  var mesh = new THREE.Mesh(geo, mat);
+  mesh.position.y = pivotY;
+  pivot.add(mesh);
+  return { pivot: pivot, mesh: mesh };
+}
+
 Stage.prototype.buildPerformer = function () {
   var g = new THREE.Group();
-  var mat = new THREE.MeshStandardMaterial({
-    color: 0x08040f, roughness: 0.35, metalness: 0.75,
-    emissive: 0xff2d9b, emissiveIntensity: 0.5
+
+  var skin  = new THREE.MeshStandardMaterial({ color: 0xf0c49a, roughness: 0.85, metalness: 0.05 });
+  var hair  = new THREE.MeshStandardMaterial({ color: 0xf5d264, roughness: 0.6,  metalness: 0.2,
+                                               emissive: 0x3a2a00, emissiveIntensity: 0.35 });
+  var top   = new THREE.MeshStandardMaterial({ color: 0xff2d9b, roughness: 0.5,  metalness: 0.35,
+                                               emissive: 0xff2d9b, emissiveIntensity: 0.28 });
+  var pants = new THREE.MeshStandardMaterial({ color: 0x241640, roughness: 0.7,  metalness: 0.3 });
+  var boots = new THREE.MeshStandardMaterial({ color: 0x120a22, roughness: 0.6,  metalness: 0.45 });
+  var dark  = new THREE.MeshStandardMaterial({ color: 0x120a1c, roughness: 0.9 });
+
+  /* --- govde --- */
+  var body = new THREE.Mesh(px(8, 12, 4), top);
+  body.position.y = 18 * MC;                       /* bacaklarin ustu */
+  g.add(body);
+
+  /* --- kafa + sac --- */
+  var head = new THREE.Group();
+  head.position.y = 24 * MC;
+  var skull = new THREE.Mesh(px(8, 8, 8), skin);
+  skull.position.y = 4 * MC;
+  head.add(skull);
+
+  var cap = new THREE.Mesh(px(8.6, 4.6, 8.6), hair);   /* sac ust kismi */
+  cap.position.y = 6.2 * MC;
+  head.add(cap);
+  var back = new THREE.Mesh(px(8.6, 7, 1.6), hair);    /* ense */
+  back.position.set(0, 2.6 * MC, -3.6 * MC);
+  head.add(back);
+  var tail = new THREE.Mesh(px(4, 11, 3), hair);       /* at kuyrugu */
+  tail.position.set(0, -2.2 * MC, -4.6 * MC);
+  head.add(tail);
+  [-2.6, 2.6].forEach(function (x) {                    /* yanlardan inen tutamlar */
+    var side = new THREE.Mesh(px(2, 8, 2.2), hair);
+    side.position.set(x * MC * 1.5, -0.4 * MC, -1.4 * MC);
+    head.add(side);
   });
-  var bodyGeo = THREE.CapsuleGeometry ?
-    new THREE.CapsuleGeometry(0.55, 1.5, 4, 10) :
-    new THREE.CylinderGeometry(0.55, 0.6, 2.2, 12);
-  var body = new THREE.Mesh(bodyGeo, mat);
-  body.position.set(0, 6.6, -13.6);
-  var head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 12), mat);
-  head.position.set(0, 8.1, -13.6);
-  var armL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.6, 0.28), mat);
-  var armR = armL.clone();
-  armL.position.set(-0.8, 7.1, -13.4);
-  armR.position.set(0.8, 7.1, -13.4);
-  g.add(body, head, armL, armR);
-  this.performer = { group: g, body: body, head: head, armL: armL, armR: armR };
+
+  [-1.9, 1.9].forEach(function (x) {                    /* gozler */
+    var eye = new THREE.Mesh(px(1.6, 1.6, 0.6), dark);
+    eye.position.set(x * MC, 4.6 * MC, 4.2 * MC);
+    head.add(eye);
+  });
+  g.add(head);
+
+  /* --- kollar --- */
+  var armL = limb(px(4, 12, 4), skin, -6 * MC);
+  var armR = limb(px(4, 12, 4), skin, -6 * MC);
+  armL.pivot.position.set(-6 * MC, 29 * MC, 0);
+  armR.pivot.position.set(6 * MC, 29 * MC, 0);
+  g.add(armL.pivot, armR.pivot);
+
+  /* --- bacaklar --- */
+  var legL = limb(px(4, 12, 4), pants, -6 * MC);
+  var legR = limb(px(4, 12, 4), pants, -6 * MC);
+  legL.pivot.position.set(-2 * MC, 12 * MC, 0);
+  legR.pivot.position.set(2 * MC, 12 * MC, 0);
+  g.add(legL.pivot, legR.pivot);
+
+  [[-2, legL], [2, legR]].forEach(function (pair) {
+    var shoe = new THREE.Mesh(px(4.4, 2, 4.6), boots);
+    shoe.position.set(0, -11.5 * MC, 0.2 * MC);
+    pair[1].pivot.add(shoe);
+  });
+
+  /* --- sahnedeki yeri --- */
+  g.position.set(0, 2.4, -8.2);          /* kabinin onunde, sahnenin on yarisinda */
+  g.scale.setScalar(1.5);
   this.scene.add(g);
 
+  this.performer = {
+    group: g, body: body, head: head, skull: skull, hair: [cap, back, tail],
+    armL: armL, armR: armR, legL: legL, legR: legR,
+    topMat: top, hairMat: hair
+  };
+
   var halo = this.glowSprite(0xff2d9b, 4.5);
-  halo.position.set(0, 7.4, -13.9);
+  halo.position.set(0, 5.6, -8.6);
   this.performerHalo = halo;
   this.scene.add(halo);
 };
@@ -2032,6 +2145,10 @@ Stage.prototype.onBar = function (bar) {
   UI.setSection(sec.def.name, bar);
   /* bolum degisiminde palet kaydir */
   if (sec.barInSection === 0) this.colorIndex = (this.colorIndex + 1) % PALETTE.length;
+  /* her bolum basinda ve drop'un ortasinda sanatcinin adi duvarda yanar */
+  if (this.nameMask && (sec.barInSection === 0 || (sec.def.energy >= 1 && sec.barInSection === 8))) {
+    this.nameTimer = sec.def.energy >= 1 ? 5.5 : 3.5;
+  }
 };
 
 Stage.prototype.punchCrowd = function (amount) {
@@ -2073,6 +2190,8 @@ Stage.prototype.update = function (dt, engine) {
 
   /* --- LED duvar --- */
   var led = this.ledMesh, cols = this.led.cols, rows = this.led.rows;
+  if (this.nameTimer > 0) this.nameTimer -= dt;
+  var showName = this.nameMask && this.nameTimer > 0;
   if (led && (QUALITY !== "low" || this.frame % 2 === 0)) {
     var bins = spec ? spec.length : 0;
     for (var x = 0; x < cols; x++) {
@@ -2082,7 +2201,15 @@ Stage.prototype.update = function (dt, engine) {
       var lit = Math.round(amp * rows * 1.15);
       for (var y = 0; y < rows; y++) {
         var idx = y * cols + x;
-        if (y < lit) {
+        if (showName) {
+          if (this.nameMask[idx]) {
+            /* harfler nabizla parlar, arkada spektrum sonuk kalir */
+            _tmpCol.setHSL((0.92 - (x / cols) * 0.4 + 1) % 1, 1,
+                           clamp(0.4 + p.kick * 0.22 + p.impact * 0.2, 0, 0.72));
+          } else {
+            _tmpCol.setRGB(0.02, 0.008, 0.05 + amp * 0.06);
+          }
+        } else if (y < lit) {
           var hue = 0.92 - (x / cols) * 0.4 + Math.sin(t * 0.25 + this.colorIndex) * 0.03;
           _tmpCol.setHSL(((hue % 1) + 1) % 1, 1, clamp(0.2 + amp * 0.42, 0, 0.66));
         } else {
@@ -2181,17 +2308,44 @@ Stage.prototype.update = function (dt, engine) {
   ph.instanceMatrix.needsUpdate = true;
   ph.material.opacity = 0.28 + energy * 0.4;
 
-  /* --- sanatci --- */
+  /* --- sanatci: Jenny --- */
   if (this.performer) {
     var pf = this.performer;
-    var hop = Math.abs(Math.sin(t * 4.4)) * (0.12 + energy * 0.5) + p.kick * 0.35;
-    pf.group.position.y = hop;
-    pf.group.rotation.y = Math.sin(t * 1.3) * 0.28;
-    pf.armL.rotation.z = 0.4 + Math.sin(t * 5.2) * (0.4 + energy);
-    pf.armR.rotation.z = -0.4 - Math.cos(t * 5.2) * (0.4 + energy);
-    pf.body.material.emissiveIntensity = Math.min(1.05, 0.3 + p.lead * 0.7 + p.impact * 0.8);
-    pf.body.material.emissive.setHex(stripCol);
-    this.performerHalo.position.y = 7.4 + hop;
+    var beat = t * (2.4 + energy * 2.2);
+
+    /* ziplama: her kick'te cokup yukari itiliyor */
+    var hop = Math.abs(Math.sin(beat)) * (0.05 + energy * 0.28) + p.kick * 0.42;
+    pf.group.position.y = 2.4 + hop;
+    pf.group.position.z = -8.2 + Math.sin(t * 0.5) * 0.5;   /* sahnede gezinir */
+    pf.group.rotation.y = Math.sin(t * 0.9) * 0.42 + p.snare * 0.12;
+
+    /* govde: kalca salinimi ve hafif one-arkaya esneme */
+    pf.body.rotation.z = Math.sin(beat) * 0.07;
+    pf.body.rotation.x = -0.05 - p.kick * 0.08;
+
+    /* kollar omuzdan doner: drop'ta yukari, sakinde yanlarda salinir */
+    var lift = clamp(energy * 1.5 + p.lead * 0.9 + p.impact * 1.2, 0, 2.5);
+    pf.armL.pivot.rotation.z = 0.25 + Math.sin(beat) * 0.35 + lift * 0.55;
+    pf.armR.pivot.rotation.z = -0.25 - Math.cos(beat) * 0.35 - lift * 0.55;
+    pf.armL.pivot.rotation.x = Math.sin(beat * 0.5) * 0.3;
+    pf.armR.pivot.rotation.x = -Math.sin(beat * 0.5) * 0.3;
+
+    /* bacaklar kalcadan: yerinde adim */
+    pf.legL.pivot.rotation.x = Math.sin(beat) * (0.12 + energy * 0.35);
+    pf.legR.pivot.rotation.x = -Math.sin(beat) * (0.12 + energy * 0.35);
+
+    /* kafa sallama ve sacin gecikmeli savrulmasi */
+    pf.head.rotation.x = 0.05 + Math.sin(beat) * (0.08 + energy * 0.16) + p.kick * 0.12;
+    pf.head.rotation.z = Math.sin(beat * 0.5) * 0.1;
+    pf.hair[2].rotation.x = -0.15 - Math.sin(beat - 0.5) * (0.14 + energy * 0.3);
+
+    /* ustu sahne rengiyle parlar */
+    pf.topMat.emissiveIntensity = Math.min(1.05, 0.22 + p.lead * 0.6 + p.impact * 0.8);
+    pf.topMat.emissive.setHex(stripCol);
+    pf.hairMat.emissiveIntensity = 0.25 + p.impact * 0.5;
+
+    this.performerHalo.position.y = 5.6 + hop;
+    this.performerHalo.position.z = pf.group.position.z - 0.4;
     this.performerHalo.material.opacity = 0.16 + p.lead * 0.3 + p.impact * 0.25;
     this.performerHalo.material.color.setHex(stripCol);
     this.performerHalo.scale.setScalar(4 + p.kick * 1.8 + p.impact * 3);
@@ -2286,6 +2440,11 @@ var UI = {
                "hud", "meters", "strobe"];
     for (var i = 0; i < ids.length; i++) this.els[ids[i]] = document.getElementById(ids[i]);
     this.els["bpm-tag"].textContent = Math.round(CONFIG.bpm);
+    /* sanatci adi tek yerden: ?artist= ile degistirilebilir */
+    var at = document.getElementById("artist-title"), gt = document.getElementById("gate-title");
+    if (at) at.textContent = CONFIG.artist;
+    if (gt) gt.textContent = CONFIG.artist;
+    document.title = CONFIG.artist + " — 3D PHONK KONSERI";
     this.els.vol.value = Math.round(CONFIG.master * 100);
 
     for (var b = 0; b < 26; b++) {
@@ -2698,6 +2857,7 @@ function startConcert() {
       APP.stage.onBar(0);
       syncSourceButton();
       syncTrackUI();
+      applyCompactLabels();
       keepAwake();
     });
   }
