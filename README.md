@@ -197,3 +197,18 @@ ekranda hata banneri gosterir, konser calmaya devam eder. Sinir: 4 MB, adim basi
 Butun nota, akor, tempo ve davul verisi kullanicinin yukledigi
 `MIGUEL - PHONK (ULTRA SLOWED)` kaydinin sinyal analizinden gelir. Disaridan bir
 nota tablosu veya ses ornegi kullanilmadi.
+
+
+## Server.pro / Ubuntu tek komut kurulum
+
+DNS A kaydini sunucunun public IP adresine yonlendirdikten sonra root Shell'de:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pisanadam/miguel-konseri/claude/miguel-phonk-concert-3d-86i8i3/install-server.sh | bash
+```
+
+Kurucu alan adini sorar (varsayilan: `jennykonser.pisankus.dedyn.io`) ve `/admin31` icin admin sifresini gizli olarak ister. Admin sifresi GitHub reposuna yazilmaz; sadece sunucuda root tarafindan okunabilen `/etc/phonk-concert.env` dosyasinda tutulur.
+
+Kurulum Node.js + FFmpeg + Nginx + Certbot'u kurar, 5 GiB ortak sarki deposunu korur/olusturur, yuklenen sesleri stereo Opus 32 kbps'e cevirir, systemd servisini kurar ve HTTPS reverse proxy'yi hazirlar.
+
+Guncellemek icin ayni komutu tekrar calistirmak yeterlidir; `/srv/phonk-concert/tracks` altindaki yuklenmis sarkilar korunur.
