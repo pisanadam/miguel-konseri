@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/pisanadam/miguel-konseri.git}"
+REPO_BRANCH="${REPO_BRANCH:-claude/miguel-phonk-concert-3d-86i8i3}"
 APP_DIR="${APP_DIR:-/srv/phonk-concert/phonk_concert_server}"
 TRACK_DIR="${TRACK_DIR:-/srv/phonk-concert/tracks}"
 TMP_DIR="${TMP_DIR:-/srv/phonk-concert/tmp}"
@@ -56,7 +57,7 @@ chmod 755 /srv/phonk-concert "$APP_DIR" "$TRACK_DIR" "$TMP_DIR"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-git clone --depth 1 "$REPO_URL" "$WORK/repo"
+git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$WORK/repo"
 cd "$WORK/repo"
 
 if [[ ! -f server.mjs ]]; then
